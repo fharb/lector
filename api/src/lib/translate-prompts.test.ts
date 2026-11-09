@@ -82,15 +82,16 @@ describe('bounded Free prompts', () => {
   });
 });
 
-describe('buildPhrasePrompt (keeps spelreels for af)', () => {
-  test('embeds the spelreels section when one is provided', () => {
-    const section = `Use the following official spelling rules:\n\n${getSpelreelsContext()}\n\n---\n\n`;
-    const prompt = buildPhrasePrompt('Afrikaans', section, 'die appel van my oog', SENTENCE);
-    expect(prompt).toContain(SPELREELS_MARKER);
+describe('buildPhrasePrompt', () => {
+  const prompt = buildPhrasePrompt('Afrikaans', 'die appel van my oog', SENTENCE);
+
+  test('includes the phrase and sentence', () => {
+    expect(prompt).toContain('die appel van my oog');
+    expect(prompt).toContain(SENTENCE);
   });
 
-  test('omits it when the section is empty (non-af languages)', () => {
-    const prompt = buildPhrasePrompt('German', '', 'der Apfel', SENTENCE);
+  test('never carries the spelreels ruleset', () => {
     expect(prompt).not.toContain(SPELREELS_MARKER);
+    expect(prompt).not.toContain(getSpelreelsContext());
   });
 });

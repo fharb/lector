@@ -8,7 +8,6 @@ import {
   type LLMTask,
   type ProviderAccessOptions,
 } from '../lib/llm';
-import { getSpelreelsContext } from '../lib/spelreels';
 import { resolveLanguage } from '../lib/active-language';
 import { getCurrentUserId } from '../lib/user';
 import { getLanguageConfig } from '../lib/languages';
@@ -385,17 +384,8 @@ export function makeTranslateRoutes({
       }
 
       if (type === 'phrase') {
-        const spelreels = lang === 'af' ? getSpelreelsContext() : '';
-        const spelreelsSection = spelreels
-          ? `Use the following official spelling rules to inform your understanding of the ${langName} input:\n\n${spelreels}\n\n---\n\n`
-          : '';
         const result = await completeJson<Record<string, unknown>>(provider, {
-          messages: [
-            {
-              role: 'user',
-              content: buildPhrasePrompt(langName, spelreelsSection, word, sentence),
-            },
-          ],
+          messages: [{ role: 'user', content: buildPhrasePrompt(langName, word, sentence) }],
           maxTokens: 1500,
           task: 'phrase-rich',
         });

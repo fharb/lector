@@ -1,10 +1,43 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { query, type Options, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { BatchRequest, BatchStatus, LLMProvider, CompletionOptions, LLMTask } from './types';
 import { LLMTruncatedError } from './errors';
+import { takeWarmQuery } from './warm-queries';
 
 function expectsJson(options: CompletionOptions): boolean {
   return options.responseFormat === 'json-object' || options.responseFormat === 'json-array';
+}
+
+async function readAgentResponse(
+  messages: AsyncIterable<SDKMessage>,
+): Promise<{ text: string; stopReason: string | null }> {
+  let text = '';
+  let stopReason: string | null = null;
+
+  for await (const message of messages) {
+    if (message.type === 'assistant') {
+      const content = (
+        message as { message?: { content?: Array<{ type: string; text?: string }> } }
+      ).message?.content;
+      if (content) {
+        for (const block of content) {
+          if (block.type === 'text' && block.text) {
+            text += block.text;
+          }
+        }
+      }
+    }
+    if (message.type === 'result') {
+      const resultMessage = message as { result?: string; stop_reason?: string | null };
+      stopReason = resultMessage.stop_reason ?? null;
+      const result = resultMessage.result;
+      if (result) {
+        text = result;
+      }
+    }
+  }
+
+  return { text, stopReason };
 }
 
 // General-purpose default. Use a plain alias (no date suffix) so it doesn't get
@@ -16,6 +49,15 @@ const DEFAULT_MODEL = 'claude-sonnet-4-6';
 // to the cheapest tier regardless of the general model, so a learner running
 // Opus/Sonnet for translation doesn't pay top-tier rates per word classified.
 const DEFAULT_CLASSIFICATION_MODEL = 'claude-haiku-4-5';
+
+const TRANSLATION_TASKS: ReadonlySet<LLMTask | undefined> = new Set<LLMTask>([
+  'word-gloss',
+  'word-enrichment',
+  'context-simple',
+  'context-rich',
+  'phrase-simple',
+  'phrase-rich',
+]);
 
 export interface AnthropicProviderOptions {
   apiKey?: string;
@@ -177,45 +219,34 @@ export class AnthropicProvider implements LLMProvider {
     // Build a single prompt from the messages
     const prompt = options.messages.map((m) => m.content).join('\n\n');
 
-    let resultText = '';
-    let stopReason: string | null = null;
+    const sdkOptions: Options = {
+      model,
+      maxTurns: 1,
+      systemPrompt: options.messages.find((m) => m.role === 'system')?.content || undefined,
+      tools: [],
+      thinking: TRANSLATION_TASKS.has(options.task) ? { type: 'disabled' } : undefined,
+      permissionMode: 'bypassPermissions',
+      // The SDK spawns a Claude Code subprocess that authenticates from its
+      // own env (CLAUDE_CODE_OAUTH_TOKEN) — it never sees the token this
+      // provider resolved from settings or CLAUDE_OAUTH_TOKEN unless we pass
+      // it explicitly. Without this, those sources yield "Not logged in" (#247).
+      env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: this.oauthToken },
+    };
 
-    for await (const message of query({
-      prompt,
-      options: {
-        model,
-        maxTurns: 1,
-        systemPrompt: options.messages.find((m) => m.role === 'system')?.content || undefined,
-        allowedTools: [],
-        permissionMode: 'bypassPermissions',
-        // The SDK spawns a Claude Code subprocess that authenticates from its
-        // own env (CLAUDE_CODE_OAUTH_TOKEN) — it never sees the token this
-        // provider resolved from settings or CLAUDE_OAUTH_TOKEN unless we pass
-        // it explicitly. Without this, those sources yield "Not logged in" (#247).
-        env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: this.oauthToken },
-      },
-    })) {
-      if (message.type === 'assistant') {
-        const content = (
-          message as { message?: { content?: Array<{ type: string; text?: string }> } }
-        ).message?.content;
-        if (content) {
-          for (const block of content) {
-            if (block.type === 'text' && block.text) {
-              resultText += block.text;
-            }
-          }
-        }
-      }
-      if (message.type === 'result') {
-        const resultMessage = message as { result?: string; stop_reason?: string | null };
-        stopReason = resultMessage.stop_reason ?? null;
-        const result = resultMessage.result;
-        if (result) {
-          resultText = result;
-        }
+    const warm =
+      TRANSLATION_TASKS.has(options.task) && !sdkOptions.systemPrompt
+        ? await takeWarmQuery(sdkOptions)
+        : null;
+    let response: Awaited<ReturnType<typeof readAgentResponse>> | null = null;
+    if (warm) {
+      try {
+        response = await readAgentResponse(warm.query(prompt));
+      } catch (err) {
+        console.warn('The ready Claude Code process failed. Starting a new one:', err);
       }
     }
+    response ??= await readAgentResponse(query({ prompt, options: sdkOptions }));
+    const { text: resultText, stopReason } = response;
 
     if (expectsJson(options) && stopReason === 'max_tokens') {
       // The Agent SDK does not expose an output-token option, so a retry can

@@ -177,9 +177,8 @@ flowchart TD
 | Limits | `src/lib/plan-limits.ts` | `phraseSelectionLimitPayload` |
 | API | `api/src/routes/translate.ts` | `POST /` |
 | Prompt | `api/src/lib/translate-prompts.ts` | `buildSimplePhrasePrompt`, `buildPhrasePrompt` |
-| Afrikaans rules | `api/src/lib/spelreels.ts` | `getSpelreelsContext` |
 
-Managed Free uses a short phrase prompt and `phraseTranslationsPerDay`. For paid Afrikaans, the prompt adds spelreels from `api/src/lib/afrikaans-spelreels/`. Phrase save does not write the dictionary cache.
+Managed Free uses a short phrase prompt and `phraseTranslationsPerDay`. Phrase save does not write the dictionary cache.
 
 Tests: `e2e/reader-phrase-selection.spec.ts`, `e2e/reader-phrase-touch.spec.ts`.
 

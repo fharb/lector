@@ -1,11 +1,6 @@
 /**
  * Prompt builders for the translation routes, kept in their own dependency-free
  * module (no DB, no provider) so they can be unit-tested as pure functions.
- *
- * The load-bearing invariant these encode: the spelreels (Afrikaans orthography
- * ruleset, ~3.3k tokens) is injected ONLY on the phrase path, never on a
- * single-word lookup. It used to ride along on every word translation and blew
- * past small local models' context windows for negligible gain.
  */
 
 /**
@@ -88,21 +83,10 @@ Rules:
 Backwards-compat fields the server adds (do NOT include these yourself — server stitches them from senses): translation, partOfSpeech.`;
 }
 
-/**
- * Phrase / idiom translation. This path KEEPS the Afrikaans spelreels context
- * (passed in by the caller, af only) — idioms and fixed expressions genuinely
- * benefit from the orthography/register rules, and phrases are looked up far
- * less often than single words, so the extra tokens are an acceptable cost here.
- */
-export function buildPhrasePrompt(
-  langName: string,
-  spelreelsSection: string,
-  word: string,
-  sentence: string,
-): string {
+export function buildPhrasePrompt(langName: string, word: string, sentence: string): string {
   return `You are a ${langName} to English translator with deep knowledge of ${langName} orthography, idiom, and register.
 
-${spelreelsSection}A learner has selected a ${langName} phrase from a text they're reading. Help them understand it the way a native speaker would — not just what the words say, but what the phrase actually means, why it's phrased this way, and when it would be used.
+A learner has selected a ${langName} phrase from a text they're reading. Help them understand it the way a native speaker would — not just what the words say, but what the phrase actually means, why it's phrased this way, and when it would be used.
 
 Phrase: "${word}"
 Sentence context: "${sentence || word}"

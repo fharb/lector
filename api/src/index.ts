@@ -15,6 +15,7 @@ import { startClassifyWorker } from './lib/classify-worker';
 import { startTranscribeWorker } from './lib/transcribe-worker';
 import { startDictWorker } from './lib/dict-worker';
 import { startLifecycleEmailWorker } from './lib/lifecycle-email';
+import { closeWarmQueries } from './lib/llm/warm-queries';
 import { isByokAvailable } from './lib/byok';
 import { defaultRequestBodyLimit } from './lib/request-body-limit';
 // Aliased: this file's Bun.serve export below is also named `config`.
@@ -197,6 +198,16 @@ startDictWorker();
 // Cloud lifecycle mail (#558). No-op in selfhost. Sweeps day-1 and day-3
 // templates. Welcome, Anki, and gloss-cap send from their own hooks.
 startLifecycleEmailWorker();
+
+// A process that is still starting must not hold up shutdown past this limit.
+const WARM_QUERY_CLOSE_LIMIT_MS = 2000;
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, () => {
+    void Promise.race([closeWarmQueries(), Bun.sleep(WARM_QUERY_CLOSE_LIMIT_MS)]).finally(() =>
+      process.exit(0),
+    );
+  });
+}
 
 const config = {
   port,

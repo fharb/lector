@@ -354,7 +354,7 @@ describe('paid and BYOK translation paths', () => {
     );
 
     expect(provider.calls.map((call) => call.task)).toEqual(['phrase-rich', 'context-rich']);
-    expect(provider.calls[0].messages[0].content).toContain(getSpelreelsContext());
+    expect(provider.calls[0].messages[0].content).not.toContain(getSpelreelsContext());
     expect(engine.getUsage('local', 'llmRequestsPerMonth')).toBe(2);
     expect(engine.getUsage('local', 'phraseTranslationsPerDay')).toBe(0);
     expect(engine.getUsage('local', 'contextTranslationsPerDay')).toBe(0);

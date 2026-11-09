@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { LLMTruncatedError } from './errors';
 import { completeJson } from './complete-json';
+import type { LLMTask } from './types';
 
 // Intercept the Agent SDK before the provider module binds it, so the tests
 // below can assert what query() actually receives (notably options.env — the
@@ -11,6 +12,11 @@ let queryResult: { result?: string; stop_reason?: string | null } = {
   result: 'ok',
   stop_reason: null,
 };
+const startupCalls: Array<{ options: Record<string, unknown> }> = [];
+const warmPrompts: string[] = [];
+let warmQueryFails = false;
+let startupFails = false;
+let warmClosed = 0;
 mock.module('@anthropic-ai/claude-agent-sdk', () => ({
   query: (args: QueryArgs) => {
     queryCalls.push(args);
@@ -18,9 +24,26 @@ mock.module('@anthropic-ai/claude-agent-sdk', () => ({
       yield { type: 'result', ...queryResult };
     })();
   },
+  startup: async (args: { options: Record<string, unknown> }) => {
+    startupCalls.push(args);
+    if (startupFails) throw new Error('startup failed');
+    return {
+      query: (prompt: string) => {
+        warmPrompts.push(prompt);
+        return (async function* () {
+          if (warmQueryFails) throw new Error('warm query failed');
+          yield { type: 'result', ...queryResult };
+        })();
+      },
+      close: () => {
+        warmClosed += 1;
+      },
+    };
+  },
 }));
 
 const { AnthropicProvider } = await import('./anthropic');
+const { closeWarmQueries } = await import('./warm-queries');
 const Anthropic = (await import('@anthropic-ai/sdk')).default;
 
 const ENV_KEYS = [
@@ -32,17 +55,24 @@ const ENV_KEYS = [
   'ANTHROPIC_AUTH_TOKEN',
   'CLAUDE_OAUTH_TOKEN',
   'CLAUDE_CODE_OAUTH_TOKEN',
+  'LLM_WARM_PROCESS',
 ] as const;
 
 let saved: Record<string, string | undefined> = {};
 
-beforeEach(() => {
+beforeEach(async () => {
   // Snapshot then clear so each test starts from a known, env-free baseline.
   saved = {};
   for (const k of ENV_KEYS) {
     saved[k] = process.env[k];
     delete process.env[k];
   }
+  await closeWarmQueries();
+  startupCalls.length = 0;
+  warmPrompts.length = 0;
+  warmQueryFails = false;
+  startupFails = false;
+  warmClosed = 0;
   queryCalls.length = 0;
   queryResult = { result: 'ok', stop_reason: null };
 });
@@ -107,6 +137,115 @@ describe('AnthropicProvider model selection', () => {
   });
 });
 
+describe('Claude Code processes started in advance', () => {
+  const ask = (provider: InstanceType<typeof AnthropicProvider>, task?: LLMTask) =>
+    provider.complete({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 8, task });
+  const tokenProvider = () => new AnthropicProvider({ oauthToken: 'tok' });
+
+  test('the first request starts one, and the next request uses it and replaces it', async () => {
+    const provider = tokenProvider();
+
+    await ask(provider, 'context-rich');
+    expect(queryCalls).toHaveLength(1);
+    expect(startupCalls).toHaveLength(1);
+
+    expect(await ask(provider, 'context-rich')).toBe('ok');
+    expect(queryCalls).toHaveLength(1);
+    expect(warmPrompts).toEqual(['hi']);
+    expect(startupCalls).toHaveLength(2);
+  });
+
+  test('starts the process with the same options as a normal request', async () => {
+    await ask(tokenProvider(), 'word-gloss');
+
+    const { options } = startupCalls[0];
+    const env = options.env as Record<string, string | undefined>;
+    expect(options.tools).toEqual([]);
+    expect(options.thinking).toEqual({ type: 'disabled' });
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('tok');
+  });
+
+  test('a word gloss and a word translation share a process', async () => {
+    const provider = tokenProvider();
+    await ask(provider, 'word-gloss');
+    await ask(provider, 'context-rich');
+
+    expect(warmPrompts).toHaveLength(1);
+  });
+
+  test('keeps separate processes for separate models', async () => {
+    const provider = new AnthropicProvider({
+      oauthToken: 'tok',
+      wordModel: 'word-model',
+      phraseModel: 'phrase-model',
+    });
+    await ask(provider, 'context-rich');
+    await ask(provider, 'phrase-rich');
+
+    expect(warmPrompts).toHaveLength(0);
+    expect(startupCalls.map((call) => call.options.model)).toEqual(['word-model', 'phrase-model']);
+  });
+
+  test('falls back to a normal request when the ready process fails', async () => {
+    const provider = tokenProvider();
+    await ask(provider, 'context-rich');
+    warmQueryFails = true;
+
+    expect(await ask(provider, 'context-rich')).toBe('ok');
+    expect(warmPrompts).toHaveLength(1);
+    expect(queryCalls).toHaveLength(2);
+  });
+
+  test('falls back to a normal request when the process cannot start', async () => {
+    startupFails = true;
+    const provider = tokenProvider();
+    await ask(provider, 'context-rich');
+
+    expect(await ask(provider, 'context-rich')).toBe('ok');
+    expect(warmPrompts).toHaveLength(0);
+    expect(queryCalls).toHaveLength(2);
+  });
+
+  test.each(['chat', 'word-classification', undefined] as const)(
+    'does not start a process for task %s',
+    async (task) => {
+      await ask(tokenProvider(), task);
+
+      expect(startupCalls).toHaveLength(0);
+    },
+  );
+
+  test('does not start a process for a request with a system prompt', async () => {
+    await tokenProvider().complete({
+      messages: [
+        { role: 'system', content: 'rules' },
+        { role: 'user', content: 'hi' },
+      ],
+      maxTokens: 8,
+      task: 'context-rich',
+    });
+
+    expect(startupCalls).toHaveLength(0);
+  });
+
+  test('LLM_WARM_PROCESS=0 turns this off', async () => {
+    process.env.LLM_WARM_PROCESS = '0';
+    const provider = tokenProvider();
+    await ask(provider, 'context-rich');
+    await ask(provider, 'context-rich');
+
+    expect(startupCalls).toHaveLength(0);
+    expect(queryCalls).toHaveLength(2);
+  });
+
+  test('closeWarmQueries closes the ready process', async () => {
+    await ask(tokenProvider(), 'context-rich');
+    await closeWarmQueries();
+
+    expect(warmClosed).toBe(1);
+  });
+});
+
 describe('Agent SDK subprocess auth (#247)', () => {
   // The SDK spawns a Claude Code subprocess that authenticates from its own
   // env — the token the provider resolved must be forwarded explicitly as
@@ -120,6 +259,37 @@ describe('Agent SDK subprocess auth (#247)', () => {
     const env = queryCalls[0].options.env as Record<string, string | undefined>;
     expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('tok-from-settings');
   });
+
+  test('disables every built-in tool', async () => {
+    const p = new AnthropicProvider({ oauthToken: 'tok-from-settings' });
+    await p.complete({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 8 });
+
+    expect(queryCalls[0].options.tools).toEqual([]);
+  });
+
+  test.each([
+    'word-gloss',
+    'word-enrichment',
+    'context-simple',
+    'context-rich',
+    'phrase-simple',
+    'phrase-rich',
+  ] as const)('turns thinking off for the %s translation task', async (task) => {
+    const p = new AnthropicProvider({ oauthToken: 'tok-from-settings' });
+    await p.complete({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 8, task });
+
+    expect(queryCalls[0].options.thinking).toEqual({ type: 'disabled' });
+  });
+
+  test.each(['chat', 'word-classification', undefined] as const)(
+    'leaves thinking at the default for task %s',
+    async (task) => {
+      const p = new AnthropicProvider({ oauthToken: 'tok-from-settings' });
+      await p.complete({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 8, task });
+
+      expect(queryCalls[0].options.thinking).toBeUndefined();
+    },
+  );
 
   test('the documented CLAUDE_OAUTH_TOKEN env var reaches the subprocess env', async () => {
     process.env.CLAUDE_OAUTH_TOKEN = 'tok-from-env';
@@ -329,9 +499,7 @@ describe('AnthropicProvider message batches (#226)', () => {
     expect(status.state).toBe('ended');
     if (status.state !== 'ended') throw new Error('unreachable');
     // req-1 errored; req-2 succeeded but had no text block — neither may appear.
-    expect([...status.results.entries()]).toEqual([
-      ['req-0', '[{"word":"kos","domain":"food"}]'],
-    ]);
+    expect([...status.results.entries()]).toEqual([['req-0', '[{"word":"kos","domain":"food"}]']]);
   });
 
   test('getBatch maps a batch the provider no longer knows to a terminal failure', async () => {
