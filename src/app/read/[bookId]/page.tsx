@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, use, useRef } from 'react';
+import { useEffect, useMemo, useState, useCallback, use, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageTurn } from '@/components/Loaders';
 import MarkdownReader from '@/components/MarkdownReader';
@@ -8,6 +8,7 @@ import OnboardingCoach from '@/components/OnboardingCoach';
 import TranslationDrawer, { TranslationDrawerSlot } from '@/components/TranslationDrawer';
 import { Button } from '@/components/ui/button';
 import ListenAlong from '@/components/ListenAlong';
+import MarkRemainingKnown from '@/components/MarkRemainingKnown';
 import {
   type Lesson,
   type LessonSummary,
@@ -22,6 +23,7 @@ import {
   lessonAudioUrl,
   retryTranscription,
   getKnownWordsMap,
+  bulkUpdateWordStates,
   saveVocab,
   getVocabByText,
   updateVocabState,
@@ -41,13 +43,24 @@ import {
 } from '@/lib/dictionary-client';
 import { speak } from '@/lib/tts';
 import { isComposing } from '@/lib/keyboard';
-import { foldWord, getLanguageConfig, isValidLanguageCode } from '@/lib/languages';
+import {
+  foldWord,
+  getLanguageConfig,
+  isValidLanguageCode,
+  makeWordSegmentation,
+} from '@/lib/languages';
 import { toast } from 'sonner';
 import { Headphones, LoaderCircle } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { WordPanelState } from '../types';
 import { useActiveLanguage } from '@/utils/hooks';
-import { patchWordState } from '@/components/MarkdownReader/optimistic-word-state';
+import { patchWordState, patchWordStates } from '@/components/MarkdownReader/optimistic-word-state';
+import {
+  remainingWordKeys,
+  tappableMarkdownText,
+  uniqueWordKeys,
+} from '@/components/MarkdownReader/remaining-words';
+import { parseSegmentWords } from '@/components/MarkdownReader/utils';
 import type { WordSource } from '@/components/MarkdownReader/types';
 import {
   encounteredOnboardingTerms,
@@ -224,6 +237,49 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     },
     [activeLang],
   );
+
+  const lessonWordKeys = useMemo(() => {
+    if (!lesson) return [];
+    const texts =
+      lesson.sourceType === 'youtube'
+        ? [lesson.textContent]
+        : tappableMarkdownText(lesson.textContent);
+    return uniqueWordKeys(
+      texts,
+      lessonPack,
+      makeWordSegmentation(parseSegmentWords(lesson.segmentWords)),
+    );
+  }, [lesson, lessonPack]);
+
+  // The state map and the bulk write both use the active language.
+  const remainingWords = useMemo(
+    () =>
+      lessonPack.code === activeLang.code
+        ? remainingWordKeys(lessonWordKeys, readerWordStates, lessonPack)
+        : [],
+    [activeLang.code, lessonPack, lessonWordKeys, readerWordStates],
+  );
+
+  const markRemainingKnown = useCallback(async () => {
+    const patch = patchWordStates(readerWordStatesRef.current, remainingWords, 'known');
+    readerWordStatesRef.current = patch.map;
+    setReaderWordStates(patch.map);
+
+    try {
+      await bulkUpdateWordStates(remainingWords.map((word) => ({ word, state: 'known' })));
+    } catch (err) {
+      const restored = patch.rollback(readerWordStatesRef.current);
+      readerWordStatesRef.current = restored;
+      setReaderWordStates(restored);
+      // apiFetch has already shown the upsell toast for a plan limit.
+      if (!(err instanceof Error && err.message === 'plan_limit')) {
+        toast.error('Could not mark the words as known — check your connection.');
+      }
+      return;
+    }
+
+    await incrementDailyStat('wordsMarkedKnown', remainingWords.length);
+  }, [remainingWords]);
 
   // Explicitly record a real reader open (not the background GET /lessons)
   // and remember tomorrow's next lesson. Both writes are idempotent so a
@@ -1273,6 +1329,10 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     (savedWord) => savedWord.id === wordPanel.existingEntry?.id,
   );
 
+  const markRemainingControl = (
+    <MarkRemainingKnown count={remainingWords.length} onConfirm={markRemainingKnown} />
+  );
+
   return (
     <div className="flex h-dvh flex-col overflow-x-hidden bg-card 2xl:flex-row print:block print:h-auto print:overflow-visible">
       <div className="relative min-h-0 flex-1 overflow-hidden print:block print:h-auto print:overflow-visible">
@@ -1285,6 +1345,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
             wordPanelOpen={wordPanel.isOpen}
             onWordClick={handleWordClick}
             onExit={() => setListenMode(false)}
+            headerAction={markRemainingControl}
           />
         ) : (
           <MarkdownReader
@@ -1298,17 +1359,20 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
             prevLesson={prevLesson}
             nextLesson={nextLesson}
             headerAction={
-              segments.length > 0 ? (
-                <button
-                  onClick={() => setListenMode(true)}
-                  title="Listen along"
-                  aria-label="Listen along"
-                  data-testid="listen-along-toggle"
-                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent"
-                >
-                  <Headphones className="h-5 w-5" />
-                </button>
-              ) : undefined
+              <>
+                {markRemainingControl}
+                {segments.length > 0 && (
+                  <button
+                    onClick={() => setListenMode(true)}
+                    title="Listen along"
+                    aria-label="Listen along"
+                    data-testid="listen-along-toggle"
+                    className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent"
+                  >
+                    <Headphones className="h-5 w-5" />
+                  </button>
+                )}
+              </>
             }
           />
         )}

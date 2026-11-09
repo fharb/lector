@@ -235,6 +235,12 @@
     summary: "Filter, search, and page in memory. GET /api/vocab has no limit.",
     steps: ["file:vocab-page", "route:vocab-get", "table:vocab"],
   });
+  N("flow:mark-remaining-known", "flow", "Mark remaining as known", {
+    domain: "vocabulary",
+    md: "vocabulary.md#mark-remaining-as-known",
+    summary: "Reader control. Confirm the count of new words. Writes knownWords only.",
+    steps: ["file:mark-remaining-known", "fn:markRemainingKnown", "fn:remainingWordKeys", "fn:patchWordStates", "route:known-words-post", "table:knownWords"],
+  });
   N("flow:known-word-import", "flow", "Known-word import", {
     domain: "vocabulary",
     md: "vocabulary.md#known-word-import",
@@ -489,6 +495,7 @@
   N("file:chat-widget", "file", "ChatWidget", { path: "src/components/ChatWidget/index.tsx", domain: "tutor" });
   N("file:cloze-feedback", "file", "ClozeFeedback", { path: "src/components/ClozeFeedback/index.tsx", domain: "tutor" });
   N("file:vocab-page", "file", "Vocab page", { path: "src/app/vocab/page.tsx", domain: "vocabulary" });
+  N("file:mark-remaining-known", "file", "MarkRemainingKnown", { path: "src/components/MarkRemainingKnown/index.tsx", domain: "vocabulary" });
   N("file:known-words-import", "file", "KnownWordsImport", { path: "src/app/settings/components/KnownWordsImport/index.tsx", domain: "vocabulary" });
   N("file:listen-along", "file", "ListenAlong", { path: "src/components/ListenAlong/index.tsx", domain: "listen" });
   N("file:youtube-player", "file", "YouTubePlayer", { path: "src/components/YouTubePlayer/index.tsx", domain: "listen" });
@@ -609,6 +616,9 @@
   N("fn:findNestedWordRef", "fn", "findNestedWordRef", { path: "src/lib/definition-links.ts" });
   N("fn:applyReaderWordState", "fn", "applyReaderWordState", { path: "src/app/read/[bookId]/page.tsx" });
   N("fn:patchWordState", "fn", "patchWordState", { path: "src/components/MarkdownReader/optimistic-word-state.ts" });
+  N("fn:markRemainingKnown", "fn", "ReadPage.markRemainingKnown", { path: "src/app/read/[bookId]/page.tsx" });
+  N("fn:patchWordStates", "fn", "patchWordStates", { path: "src/components/MarkdownReader/optimistic-word-state.ts" });
+  N("fn:remainingWordKeys", "fn", "remainingWordKeys", { path: "src/components/MarkdownReader/remaining-words.ts" });
   N("fn:saveVocab", "fn", "saveVocab", { path: "src/lib/data-layer.ts" });
   N("fn:updateVocabState", "fn", "updateVocabState", { path: "src/lib/data-layer.ts" });
   N("fn:updateLessonProgress", "fn", "updateLessonProgress", { path: "src/lib/data-layer.ts" });
@@ -830,7 +840,7 @@
     "flow:enrich-nested",
     "flow:cache-translation",
   ]);
-  domainFlows("vocabulary", ["flow:save-vocab", "flow:vocab-list", "flow:known-word-import"]);
+  domainFlows("vocabulary", ["flow:save-vocab", "flow:vocab-list", "flow:mark-remaining-known", "flow:known-word-import"]);
   domainFlows("practice", ["flow:practice-word", "flow:dictation", "flow:blacklist"]);
   domainFlows("journal", ["flow:journal-submit", "flow:journal-draft"]);
   domainFlows("tutor", ["flow:tutor-chat", "flow:cloze-explain"]);
@@ -1042,6 +1052,12 @@
   edge("fn:applyReaderWordState", "file:read-page", "in");
   edge("fn:applyReaderWordState", "fn:patchWordState", "calls");
   edge("fn:patchWordState", "file:optimistic-state", "in");
+  edge("flow:mark-remaining-known", "file:mark-remaining-known", "starts");
+  edge("file:mark-remaining-known", "fn:markRemainingKnown", "calls");
+  edge("fn:markRemainingKnown", "fn:remainingWordKeys", "calls");
+  edge("fn:markRemainingKnown", "fn:patchWordStates", "calls");
+  edge("fn:markRemainingKnown", "route:known-words-post", "http");
+  edge("fn:patchWordStates", "file:optimistic-state", "in");
   edge("fn:applyReaderWordState", "fn:saveVocab", "calls");
   edge("fn:applyReaderWordState", "fn:updateVocabState", "calls");
   edge("fn:saveVocab", "file:data-layer", "in");

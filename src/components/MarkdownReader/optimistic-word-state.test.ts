@@ -1,5 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { patchWordState } from './optimistic-word-state';
+import { patchWordState, patchWordStates } from './optimistic-word-state';
+
+describe('patchWordStates', () => {
+  it('patches every word without changing the source map', () => {
+    const source = new Map([['son', 'new' as const]]);
+    const patch = patchWordStates(source, ['son', 'maan'], 'known');
+
+    expect(source.get('son')).toBe('new');
+    expect(patch.map.get('son')).toBe('known');
+    expect(patch.map.get('maan')).toBe('known');
+  });
+
+  it('restores new rows and removes added rows after a failed write', () => {
+    const patch = patchWordStates(new Map([['son', 'new' as const]]), ['son', 'maan'], 'known');
+    const restored = patch.rollback(patch.map);
+
+    expect(restored.get('son')).toBe('new');
+    expect(restored.has('maan')).toBe(false);
+  });
+
+  it('keeps a word that changed after the patch', () => {
+    const patch = patchWordStates(new Map(), ['son', 'maan'], 'known');
+    const latest = patchWordState(patch.map, 'son', 'level2').map;
+    const restored = patch.rollback(latest);
+
+    expect(restored.get('son')).toBe('level2');
+    expect(restored.has('maan')).toBe(false);
+  });
+
+  it('returns the same map when there is nothing to restore', () => {
+    const patch = patchWordStates(new Map(), ['son'], 'known');
+    const latest = patchWordState(patch.map, 'son', 'level2').map;
+
+    expect(patch.rollback(latest)).toBe(latest);
+  });
+});
 
 describe('patchWordState', () => {
   it('patches one word without changing the source map', () => {

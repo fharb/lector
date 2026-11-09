@@ -63,6 +63,27 @@ Filter and page run in memory. `GET /api/vocab` has no `limit`. Delete of the la
 
 Tests: `e2e/vocab-edit.spec.ts`, `e2e/vocab-pagination.spec.ts`.
 
+## Mark remaining as known
+
+**App domain:** Vocabulary
+
+The reader header and listen-along have a `Mark remaining as known` control. It collects the unique tappable words in the lesson. It keeps only words with no state or the state `new`. The learner confirms the count. The write changes `knownWords` only, so it creates no `vocab` rows. There is no undo.
+
+The collector reads paragraphs and list items only, because `ReaderArticle` makes only those tappable. It does not read headings, link targets, or image sources. The control is disabled when no words remain, or when the lesson language is not the active language.
+
+| Role | Path | Function |
+| --- | --- | --- |
+| UI | `src/components/MarkRemainingKnown/index.tsx` | `MarkRemainingKnown` |
+| Reader | `src/app/read/[bookId]/page.tsx` | `markRemainingKnown` |
+| Collect | `src/components/MarkdownReader/remaining-words.ts` | `tappableMarkdownText`, `uniqueWordKeys`, `remainingWordKeys` |
+| Optimistic map | `src/components/MarkdownReader/optimistic-word-state.ts` | `patchWordStates` |
+| Client | `src/lib/data-layer.ts` | `bulkUpdateWordStates` |
+| API | `api/src/routes/known-words.ts` | `POST /` |
+
+A failed write restores the earlier colours. On success, `dailyStats.wordsMarkedKnown` grows by the word count.
+
+Tests: `e2e/reader-mark-remaining-known.spec.ts`.
+
 ## Known-word import
 
 **App domain:** Vocabulary

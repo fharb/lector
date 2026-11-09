@@ -5,27 +5,37 @@ export interface WordStatePatch {
   rollback: (current: Map<string, WordState>) => Map<string, WordState>;
 }
 
-/**
- * Patch one already-folded word key and return a guarded rollback. The guard
- * prevents an older failed request from undoing a newer state choice.
- */
 export function patchWordState(
   current: Map<string, WordState>,
   word: string,
   state: WordState,
 ): WordStatePatch {
-  const hadPrevious = current.has(word);
-  const previous = current.get(word);
+  return patchWordStates(current, [word], state);
+}
+
+/**
+ * Patch already-folded word keys and return a guarded rollback. The guard
+ * prevents an older failed request from undoing a newer state choice.
+ */
+export function patchWordStates(
+  current: Map<string, WordState>,
+  words: string[],
+  state: WordState,
+): WordStatePatch {
+  const previous = new Map(words.map((word) => [word, current.get(word)]));
   const map = new Map(current);
-  map.set(word, state);
+  for (const word of words) map.set(word, state);
 
   return {
     map,
     rollback(latest) {
-      if (latest.get(word) !== state) return latest;
-      const restored = new Map(latest);
-      if (hadPrevious && previous) restored.set(word, previous);
-      else restored.delete(word);
+      let restored = latest;
+      for (const [word, prior] of previous) {
+        if (latest.get(word) !== state) continue;
+        if (restored === latest) restored = new Map(latest);
+        if (prior) restored.set(word, prior);
+        else restored.delete(word);
+      }
       return restored;
     },
   };

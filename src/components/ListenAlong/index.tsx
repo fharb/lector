@@ -14,7 +14,7 @@
 // Tapping any word auto-pauses and opens the translation drawer via the same
 // onWordClick contract MarkdownReader uses, so vocab actions work identically.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowLeft,
   BookOpenText,
@@ -45,6 +45,7 @@ export interface ListenAlongProps {
   onWordClick: (word: string, sentence: string) => void;
   /** Back to reading mode. */
   onExit: () => void;
+  headerAction?: ReactNode;
 }
 
 type PlayerMode = 'continuous' | 'shadow';
@@ -62,6 +63,7 @@ export default function ListenAlong({
   wordPanelOpen = false,
   onWordClick,
   onExit,
+  headerAction,
 }: ListenAlongProps) {
   const activeLang = useActiveLanguage();
   // Tokenize by the LESSON's language, same rule as MarkdownReader.
@@ -225,14 +227,17 @@ export default function ListenAlong({
         <h1 className="mx-2 flex-1 truncate text-center text-sm font-medium text-foreground sm:text-lg">
           {lesson.title}
         </h1>
-        <button
-          onClick={onExit}
-          title="Read as text"
-          aria-label="Read as text"
-          className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent"
-        >
-          <BookOpenText className="h-5 w-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          {headerAction}
+          <button
+            onClick={onExit}
+            title="Read as text"
+            aria-label="Read as text"
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent"
+          >
+            <BookOpenText className="h-5 w-5" />
+          </button>
+        </div>
       </header>
 
       {/* Segments */}
