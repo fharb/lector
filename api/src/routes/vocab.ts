@@ -88,6 +88,7 @@ app.get('/', (c) => {
       createdAt: v.createdAt,
       pushedToAnki: v.pushedToAnki === 1,
       ankiNoteId: v.ankiNoteId,
+      sentenceWord: v.sentenceWord,
     })),
   );
 });
@@ -129,6 +130,10 @@ app.post('/', async (c) => {
   }
   const pushedError = validateBooleanLike(body.pushedToAnki, 'pushedToAnki');
   if (pushedError) return c.json({ error: pushedError }, 400);
+  if (body.sentenceWord != null) {
+    const sentenceWordError = validateWordKey(body.sentenceWord, 'sentenceWord');
+    if (sentenceWordError) return c.json({ error: sentenceWordError }, 400);
+  }
   const id = body.id || randomUUID();
   const now = new Date().toISOString();
   const lang = resolveLanguage(body.language, userId);
@@ -164,15 +169,15 @@ app.post('/', async (c) => {
   const verdict = entitlements.reserveCount(userId, checks, () => {
     db.prepare(
       `
-      INSERT INTO vocab (id, text, type, sentence, translation, state, stateUpdatedAt, reviewCount, bookId, chapter, createdAt, pushedToAnki, ankiNoteId, language, userId)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO vocab (id, text, type, sentence, translation, state, stateUpdatedAt, reviewCount, bookId, chapter, createdAt, pushedToAnki, ankiNoteId, language, userId, sentenceWord)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(userId, id) DO UPDATE SET
         text = excluded.text, type = excluded.type, sentence = excluded.sentence,
         translation = excluded.translation, state = excluded.state,
         stateUpdatedAt = excluded.stateUpdatedAt, reviewCount = excluded.reviewCount,
         bookId = excluded.bookId, chapter = excluded.chapter, createdAt = excluded.createdAt,
         pushedToAnki = excluded.pushedToAnki, ankiNoteId = excluded.ankiNoteId,
-        language = excluded.language
+        language = excluded.language, sentenceWord = excluded.sentenceWord
     `,
     ).run(
       id,
@@ -190,6 +195,7 @@ app.post('/', async (c) => {
       body.ankiNoteId ?? null,
       lang,
       userId,
+      body.sentenceWord != null ? normalizeText(body.sentenceWord) : null,
     );
 
     db.prepare(

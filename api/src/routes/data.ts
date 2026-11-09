@@ -1317,14 +1317,15 @@ app.post(
 
       if (data.vocab?.length) {
         const stmt = db.prepare(`
-      INSERT INTO vocab (id, text, type, sentence, translation, state, stateUpdatedAt, reviewCount, bookId, chapter, language, createdAt, pushedToAnki, ankiNoteId, userId)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO vocab (id, text, type, sentence, translation, state, stateUpdatedAt, reviewCount, bookId, chapter, language, createdAt, pushedToAnki, ankiNoteId, userId, sentenceWord)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(userId, id) DO UPDATE SET
         text = excluded.text, type = excluded.type, sentence = excluded.sentence,
         translation = excluded.translation, state = excluded.state, stateUpdatedAt = excluded.stateUpdatedAt,
         reviewCount = excluded.reviewCount, bookId = excluded.bookId, chapter = excluded.chapter,
         language = excluded.language, createdAt = excluded.createdAt,
-        pushedToAnki = excluded.pushedToAnki, ankiNoteId = excluded.ankiNoteId
+        pushedToAnki = excluded.pushedToAnki, ankiNoteId = excluded.ankiNoteId,
+        sentenceWord = excluded.sentenceWord
     `);
 
         for (const v of data.vocab) {
@@ -1344,6 +1345,7 @@ app.post(
             v.pushedToAnki ? 1 : 0,
             v.ankiNoteId || null,
             userId,
+            v.sentenceWord ? normalizeText(v.sentenceWord) : null,
           );
           results.vocab++;
         }

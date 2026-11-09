@@ -602,6 +602,11 @@ function getDb(): Database {
   // on ordinary text lessons. Added after migrateCompositeTenantKeys (which
   // rebuilds lessons for the compound PK) so the columns survive that rebuild
   // when both run on the same boot.
+  const vocabCols = _db.prepare('PRAGMA table_info(vocab)').all() as { name: string }[];
+  if (!vocabCols.some((c) => c.name === 'sentenceWord')) {
+    _db.exec('ALTER TABLE vocab ADD COLUMN sentenceWord TEXT');
+  }
+
   const lessonAudioCols = _db.prepare('PRAGMA table_info(lessons)').all() as { name: string }[];
   if (!lessonAudioCols.some((c) => c.name === 'audioPath')) {
     _db.exec('ALTER TABLE lessons ADD COLUMN audioPath TEXT');
@@ -1840,6 +1845,8 @@ export interface VocabRow {
   createdAt: string;
   pushedToAnki: number;
   ankiNoteId: number | null;
+  /** The form in `sentence` when `text` holds its base form. */
+  sentenceWord: string | null;
 }
 
 export interface KnownWordRow {

@@ -10,18 +10,17 @@ export function transcriptSegmentAt(segments: TranscriptSegment[], seconds: numb
   return index < 0 ? null : index;
 }
 
-/** The scrollTop that centers a row in the part of the scroller below a sticky header. */
-export function stickyCenteredScrollTop({
+export const LINES_BELOW_VIDEO = 2;
+
+/** The scrollTop that leaves `gap` pixels between a sticky header and a row. */
+export function belowStickyScrollTop({
   rowTop,
-  rowHeight,
-  containerHeight,
   stickyHeight,
+  gap,
 }: {
   rowTop: number;
-  rowHeight: number;
-  containerHeight: number;
   stickyHeight: number;
+  gap: number;
 }): number {
-  const visibleHeight = Math.max(containerHeight - stickyHeight, rowHeight);
-  return Math.max(0, rowTop - stickyHeight - (visibleHeight - rowHeight) / 2);
+  return Math.max(0, rowTop - stickyHeight - gap);
 }

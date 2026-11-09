@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { getLanguageConfig } from '@/lib/languages';
 import type { WordState } from '@/types';
-import { remainingWordKeys, tappableMarkdownText, uniqueWordKeys } from './remaining-words';
+import {
+  knownStoredWords,
+  remainingBaseWords,
+  remainingWordKeys,
+  tappableMarkdownText,
+  uniqueWordKeys,
+} from './remaining-words';
 
 const af = getLanguageConfig('af');
 const collect = (markdown: string) => uniqueWordKeys(tappableMarkdownText(markdown), af);
@@ -61,5 +67,61 @@ describe('remainingWordKeys', () => {
 
   it('returns nothing when the lesson has no words', () => {
     expect(remainingWordKeys([], states([]), af)).toEqual([]);
+  });
+});
+
+describe('remainingBaseWords', () => {
+  it('counts the forms of a word once, under its base word', () => {
+    const forms = new Map([
+      ['читала', ['читать']],
+      ['читаю', ['читать']],
+    ]);
+    expect(remainingBaseWords(['читала', 'читаю', 'дом'], forms)).toEqual(['читать', 'дом']);
+  });
+
+  it('keeps every word when there are no forms', () => {
+    expect(remainingBaseWords(['een', 'twee'], new Map())).toEqual(['een', 'twee']);
+  });
+});
+
+describe('knownStoredWords', () => {
+  const ru = getLanguageConfig('ru');
+  const states = (pairs: Array<[string, WordState]>) => new Map(pairs);
+  const forms = new Map([['читала', ['читать']]]);
+
+  it('returns a known word itself', () => {
+    expect(knownStoredWords(['дом'], states([['дом', 'known']]), new Map(), ru)).toEqual(['дом']);
+  });
+
+  it('returns the base word of a form that follows it', () => {
+    expect(knownStoredWords(['читала'], states([['читать', 'known']]), forms, ru)).toEqual([
+      'читать',
+    ]);
+  });
+
+  it('leaves a form alone when it has its own learning state', () => {
+    const stored = states([
+      ['читать', 'known'],
+      ['читала', 'level1'],
+    ]);
+    expect(knownStoredWords(['читала'], stored, forms, ru)).toEqual([]);
+  });
+
+  it('skips words that are new or being learned', () => {
+    const stored = states([
+      ['дом', 'new'],
+      ['кот', 'level2'],
+    ]);
+    expect(knownStoredWords(['дом', 'кот'], stored, new Map(), ru)).toEqual([]);
+  });
+
+  it('lists a base word once for several forms', () => {
+    const several = new Map([
+      ['читала', ['читать']],
+      ['читаю', ['читать']],
+    ]);
+    expect(
+      knownStoredWords(['читала', 'читаю'], states([['читать', 'known']]), several, ru),
+    ).toEqual(['читать']);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TranscriptSegment } from '@/types';
-import { stickyCenteredScrollTop, transcriptSegmentAt } from './transcript-sync';
+import { belowStickyScrollTop, transcriptSegmentAt } from './transcript-sync';
 
 const SEGMENTS: TranscriptSegment[] = [
   { start: 1, end: 3, text: 'een' },
@@ -28,37 +28,12 @@ describe('transcriptSegmentAt', () => {
   });
 });
 
-describe('stickyCenteredScrollTop', () => {
-  it('centers the row in the area below the sticky header', () => {
-    expect(
-      stickyCenteredScrollTop({
-        rowTop: 2000,
-        rowHeight: 40,
-        containerHeight: 800,
-        stickyHeight: 400,
-      }),
-    ).toBe(1420);
+describe('belowStickyScrollTop', () => {
+  it('leaves the gap between the sticky header and the row', () => {
+    expect(belowStickyScrollTop({ rowTop: 2000, stickyHeight: 400, gap: 56 })).toBe(1544);
   });
 
   it('never scrolls above the top', () => {
-    expect(
-      stickyCenteredScrollTop({
-        rowTop: 420,
-        rowHeight: 40,
-        containerHeight: 800,
-        stickyHeight: 400,
-      }),
-    ).toBe(0);
-  });
-
-  it('places the row right below the header when no space is left', () => {
-    expect(
-      stickyCenteredScrollTop({
-        rowTop: 2000,
-        rowHeight: 40,
-        containerHeight: 300,
-        stickyHeight: 400,
-      }),
-    ).toBe(1600);
+    expect(belowStickyScrollTop({ rowTop: 420, stickyHeight: 400, gap: 56 })).toBe(0);
   });
 });

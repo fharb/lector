@@ -152,7 +152,7 @@ export function buildUserExport(userId: string): UserExport {
       db
         .prepare(
           `SELECT id, text, type, sentence, translation, state, stateUpdatedAt,
-                  reviewCount, bookId, chapter, language, createdAt, pushedToAnki, ankiNoteId
+                  reviewCount, bookId, chapter, language, createdAt, pushedToAnki, ankiNoteId, sentenceWord
            FROM vocab WHERE userId = ?`,
         )
         .all(userId),

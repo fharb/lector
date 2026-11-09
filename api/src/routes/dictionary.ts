@@ -9,6 +9,8 @@ import {
   acceptedCacheContentBytes,
   acceptedCacheIdentity,
   cacheAcceptedEntry,
+  lookupMeanings,
+  lookupPrimaryBaseWords,
   lookupWord,
   storedAcceptedCacheContentBytes,
   validateCacheAcceptedInput,
@@ -19,6 +21,7 @@ import { aggregateGrowthCheck, batchGrowthCheck } from '../lib/storage-limits';
 // The largest valid cache payload is well under this even with four-byte
 // Unicode. Reject unknown/oversized fields before c.req.json() buffers them.
 const MAX_CACHE_BODY_BYTES = 256 * 1024;
+const MAX_BASE_WORDS = 50_000;
 
 // Record an on-device dictionary hit: the shared session ping (sessionStartedAt
 // on the looked-up language's row) plus a dictionaryLookups bump, so daily lookup
@@ -59,6 +62,44 @@ export function makeDictionaryRoutes(
       console.error('Dictionary lookup error:', error);
       return c.json({ error: error instanceof Error ? error.message : 'Lookup failed' }, 500);
     }
+  });
+
+  app.post('/meanings', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as {
+      words?: unknown;
+      language?: unknown;
+    } | null;
+    const words = body?.words;
+    if (!Array.isArray(words) || !words.every((word) => typeof word === 'string')) {
+      return c.json({ error: 'words must be an array of strings' }, 400);
+    }
+    if (words.length > MAX_BASE_WORDS) {
+      return c.json({ error: `words must hold at most ${MAX_BASE_WORDS} items` }, 400);
+    }
+    if (body?.language !== undefined && typeof body.language !== 'string') {
+      return c.json({ error: 'Language must be a string' }, 400);
+    }
+    const lang = resolveLanguage(body?.language as string | undefined, resolveUser(c));
+    return c.json({ meanings: Object.fromEntries(lookupMeanings(words, lang)) });
+  });
+
+  app.post('/base-words', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as {
+      words?: unknown;
+      language?: unknown;
+    } | null;
+    const words = body?.words;
+    if (!Array.isArray(words) || !words.every((word) => typeof word === 'string')) {
+      return c.json({ error: 'words must be an array of strings' }, 400);
+    }
+    if (words.length > MAX_BASE_WORDS) {
+      return c.json({ error: `words must hold at most ${MAX_BASE_WORDS} items` }, 400);
+    }
+    if (body?.language !== undefined && typeof body.language !== 'string') {
+      return c.json({ error: 'Language must be a string' }, 400);
+    }
+    const lang = resolveLanguage(body?.language as string | undefined, resolveUser(c));
+    return c.json({ baseWords: Object.fromEntries(lookupPrimaryBaseWords(words, lang)) });
   });
 
   // POST /api/dictionary/cache — persist a user-accepted AI translation.

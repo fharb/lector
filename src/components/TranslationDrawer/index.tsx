@@ -12,6 +12,7 @@ import { ChevronRight, RefreshCw, Sparkles, Volume2, X, Zap } from 'lucide-react
 import TargetText from '@/components/TargetText';
 import NestedWordButton from './components/NestedWordButton';
 import Gloss from './components/Gloss';
+import { StressedWord } from './StressedWord';
 import { lookupAnnouncement } from './lookup-announcement';
 
 export { type ExpandedDictionaryEntry } from './types';
@@ -45,6 +46,9 @@ export default function TranslationDrawer({
   onEnrich,
   onRetranslate,
   onLookupWord,
+  saveOptions = [],
+  saveTarget,
+  onChooseSaveTarget,
   onAddToAnki,
   onAddCloze,
 }: TranslationDrawerProps) {
@@ -161,7 +165,9 @@ export default function TranslationDrawer({
                     title={wordStateLabels[currentState]}
                   />
                   <h2 className="text-xl font-semibold break-words text-foreground">
-                    <TargetText>{word}</TargetText>
+                    <TargetText>
+                      <StressedWord word={word} stressIndex={entry?.stressIndex} />
+                    </TargetText>
                   </h2>
                   {speakable && (
                     <button
@@ -199,6 +205,31 @@ export default function TranslationDrawer({
                       </TargetText>
                     )}
                   </p>
+                )}
+                {saveOptions.length > 0 && (
+                  <div
+                    className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground"
+                    data-testid="save-as"
+                  >
+                    <span>Saves as</span>
+                    {saveOptions.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => onChooseSaveTarget?.(option)}
+                        aria-pressed={option === saveTarget}
+                        data-testid={`save-as-${option}`}
+                        className={clsx(
+                          'rounded px-1.5 py-0.5 font-medium',
+                          option === saveTarget
+                            ? 'bg-accent text-foreground'
+                            : 'hover:bg-accent/60',
+                        )}
+                      >
+                        <TargetText as="span">{option}</TargetText>
+                      </button>
+                    ))}
+                  </div>
                 )}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <span

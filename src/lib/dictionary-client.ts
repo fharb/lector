@@ -18,6 +18,8 @@ export interface ExpandedDictionaryEntry {
   senses: Array<{ partOfSpeech: string; gloss: string }>;
   relatedForms?: Array<{ form: string; relation: string }>;
   lemmaInfo?: { stem: string; label: string };
+  stressIndex?: number;
+  baseOptions?: Array<{ word: string; translation: string }>;
   /** `dict` = built-in kaikki dict, `cache` = user-learned AI translation. */
   source?: 'dict' | 'cache';
 }
@@ -81,7 +83,9 @@ export interface CacheAcceptedTranslationInput {
  * The session lookup cache is invalidated for the word so the next click
  * re-fetches and picks up the freshly-cached entry (now with `source: 'cache'`).
  */
-export async function cacheAcceptedTranslation(input: CacheAcceptedTranslationInput): Promise<void> {
+export async function cacheAcceptedTranslation(
+  input: CacheAcceptedTranslationInput,
+): Promise<void> {
   if (!input.word || !input.senses?.length) return;
   invalidateLookupCache(input.word);
   try {

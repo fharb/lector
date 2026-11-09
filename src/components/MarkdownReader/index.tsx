@@ -6,7 +6,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Languages, SquarePen } from 'luci
 import { getLessonReadings, updateLessonProgress } from '@/lib/data-layer';
 import { createTrailingThrottle } from './throttle';
 import { snapToWordBoundaries } from './utils';
-import { stickyCenteredScrollTop, transcriptSegmentAt } from './transcript-sync';
+import { belowStickyScrollTop, LINES_BELOW_VIDEO, transcriptSegmentAt } from './transcript-sync';
 import {
   foldWord,
   getLanguageConfig,
@@ -155,14 +155,15 @@ export default function MarkdownReader({
       `[data-segment-index="${activeSegmentIndex}"]`,
     );
     if (!row) return;
-    const top = stickyCenteredScrollTop({
+    const style = getComputedStyle(row.lastElementChild ?? row);
+    const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5;
+    const top = belowStickyScrollTop({
       rowTop:
         row.getBoundingClientRect().top -
         container.getBoundingClientRect().top +
         container.scrollTop,
-      rowHeight: row.offsetHeight,
-      containerHeight: container.clientHeight,
       stickyHeight: stickyPlayerRef.current?.offsetHeight ?? 0,
+      gap: lineHeight * LINES_BELOW_VIDEO,
     });
     container.scrollTo({ top, behavior: 'smooth' });
   }, [activeSegmentIndex, followVideo]);

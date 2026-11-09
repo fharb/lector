@@ -266,7 +266,8 @@ app.post('/queue', async (c) => {
       continue;
     }
 
-    const word = optionalString(item.word) ?? vocab.text;
+    const clozeForm = item.cardType === 'cloze' ? vocab.sentenceWord : null;
+    const word = optionalString(item.word) ?? clozeForm ?? vocab.text;
     const sentence = optionalString(item.sentence) ?? vocab.sentence;
 
     // Validate clozes at queue time — a blank-less cloze is invalid in Anki,
@@ -282,7 +283,7 @@ app.post('/queue', async (c) => {
     planned.push({
       id,
       cardType: item.cardType,
-      word: optionalString(item.word),
+      word: optionalString(item.word) ?? clozeForm,
       sentence: optionalString(item.sentence),
       translation: optionalString(item.translation),
       meaning: optionalString(item.meaning),

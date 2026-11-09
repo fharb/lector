@@ -10,7 +10,7 @@ import { addClozeCard } from '@/lib/anki';
 import { queueForAnki } from '@/lib/anki-queue';
 import { useAnkiTransport } from '@/lib/anki-transport';
 import { clozeTokenSeparator, foldWord, resolveClozeTokens } from '@/lib/languages';
-import { getVocabByText, saveVocab } from '@/lib/data-layer';
+import { getBaseWords, getVocabByText, saveVocab } from '@/lib/data-layer';
 import { ANKI_CLOZE_DECK_SETTING_KEY } from '../../constants';
 import { CurrentSentence, IFeedbackData } from '../../types';
 import { canSpeak, speak } from '@/lib/tts';
@@ -55,12 +55,15 @@ export default function Feedback({
       // a bank word that was never saved — it's being studied, so it belongs
       // in vocab) and queue the cloze with THIS sentence as an override.
       if (ankiTransport === 'addon') {
-        let entry = await getVocabByText(foldWord(cleanWord, activeLang));
+        const wordKey = foldWord(cleanWord, activeLang);
+        const baseWord = (await getBaseWords([wordKey])).get(wordKey) ?? wordKey;
+        let entry = await getVocabByText(baseWord);
         if (!entry) {
           const now = new Date();
           entry = {
             id: crypto.randomUUID(),
-            text: foldWord(cleanWord, activeLang),
+            text: baseWord,
+            sentenceWord: baseWord === wordKey ? undefined : cleanWord,
             type: 'word',
             sentence: current.sentence.sentence,
             translation: current.sentence.translation,

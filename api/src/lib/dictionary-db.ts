@@ -13,9 +13,13 @@ import {
   stripMarks,
 } from './languages';
 import { esperantoIpa } from '../../../languages/eo/ipa';
+import { stressedVowelIndex } from '../../../languages/ru/stress';
 import { stemCandidates } from '../../../languages/morphology';
 import { analyseJapanese } from './ja-morphology';
 import { acceptedDictionaryContentBytes } from './storage-limits';
+import { preferredBase } from './base-preferences';
+import { rankBaseOptions, resolveBaseForms, type BaseOption, type FormRow } from './word-forms';
+import type { WordFormsConfig } from '../../../languages/types';
 
 // x-system fold (#307 §3.4): learners without an Esperanto keyboard type
 // cx/gx/hx/jx/sx/ux for the supersignoj (ĉ ĝ ĥ ĵ ŝ ŭ). Folded at the lookup
@@ -88,6 +92,10 @@ export interface ExpandedDictionaryEntry {
   senses: Array<{ partOfSpeech: string; gloss: string }>;
   relatedForms?: Array<{ form: string; relation: string }>;
   lemmaInfo?: { stem: string; label: string };
+  /** Russian: position of the stressed vowel in the folded surface word. */
+  stressIndex?: number;
+  /** Base forms a save can use, best guess first. Set for packs with wordForms. */
+  baseOptions?: Array<{ word: string; translation: string }>;
   /** `dict` = built-in kaikki dict; `cache` = user-learned AI translation. */
   source?: 'dict' | 'cache';
 }
@@ -910,6 +918,21 @@ export function lookupWord(
     const ipa = esperantoIpa(foldKey(word, language));
     if (ipa) entry.ipa = ipa;
   }
+
+  // Reads the surface form's own row: the stress can differ from the lemma's.
+  if (entry && language === 'ru') {
+    const key = foldKey(word, language);
+    const own = getStmts(language)?.selectEntry.get(key) as EntryRow | null | undefined;
+    const stressIndex = own?.ipa ? stressedVowelIndex(key, own.ipa) : undefined;
+    if (stressIndex !== undefined) entry.stressIndex = stressIndex;
+  }
+
+  const pack = getLanguageConfig(isValidLanguageCode(language) ? language : DEFAULT_LANGUAGE);
+  if (entry && pack.wordForms && !word.includes(' ')) {
+    const key = foldKey(word, language);
+    const options = readBaseForms([key], language, pack.wordForms)?.options.get(key);
+    if (options) entry.baseOptions = options;
+  }
   return entry;
 }
 
@@ -986,6 +1009,120 @@ export function lookupReadings(words: readonly string[], language: string): Map<
     console.warn(`[dictionary] batch readings failed for ${language}:`, err);
   }
   return readings;
+}
+
+const BASE_FORM_ROWS_SQL = `SELECT i.inflected_form AS form, i.lemma, i.type
+    FROM json_each(?) k
+    JOIN inflections i ON i.inflected_form = k.value`;
+
+const BASE_FORM_SENSES_SQL = `SELECT k.value AS word, s.gloss
+    FROM json_each(?) k
+    JOIN senses s ON s.word = k.value
+    ORDER BY s.sort_order`;
+
+interface BaseFormLookup {
+  bases: Map<string, string[]>;
+  options: Map<string, BaseOption[]>;
+}
+
+function readBaseForms(
+  keys: string[],
+  language: string,
+  config: WordFormsConfig,
+): BaseFormLookup | null {
+  const dictionary = getDb(language);
+  if (!dictionary) return null;
+  try {
+    const selectForms = dictionary.prepare(BASE_FORM_ROWS_SQL);
+    const read = (batch: string[]) => selectForms.all(JSON.stringify(batch)) as FormRow[];
+    const bases = resolveBaseForms(keys, read, config);
+    const candidates = [...new Set([...bases.values()].flat())];
+    const onlyForms = resolveBaseForms(candidates, read, config);
+
+    const glosses = new Map<string, string[]>();
+    const senseRows = dictionary
+      .prepare(BASE_FORM_SENSES_SQL)
+      .all(JSON.stringify([...keys, ...candidates])) as Array<{ word: string; gloss: string }>;
+    for (const row of senseRows) {
+      const list = glosses.get(row.word) ?? [];
+      list.push(row.gloss);
+      glosses.set(row.word, list);
+    }
+
+    const options = new Map<string, BaseOption[]>();
+    for (const key of keys) {
+      const ranked = rankBaseOptions({
+        key,
+        candidates: bases.get(key) ?? [],
+        isOnlyAForm: (word) => onlyForms.has(word),
+        glossesOf: (word) => glosses.get(word) ?? [],
+        preferred: preferredBase(language, key),
+      });
+      if (ranked.length > 0) options.set(key, ranked);
+    }
+    return { bases, options };
+  } catch (err) {
+    console.warn(`[dictionary] base forms failed for ${language}:`, err);
+    return null;
+  }
+}
+
+function readBaseFormsFor(words: readonly string[], language: string): BaseFormLookup | null {
+  const pack = getLanguageConfig(isValidLanguageCode(language) ? language : DEFAULT_LANGUAGE);
+  if (!pack.wordForms) return null;
+  const keys = [...new Set(words.map((word) => foldKey(word, language)).filter(Boolean))];
+  return keys.length > 0 ? readBaseForms(keys, language, pack.wordForms) : null;
+}
+
+export function baseOptionsForWords(
+  words: readonly string[],
+  language: string,
+): Map<string, BaseOption[]> {
+  return readBaseFormsFor(words, language)?.options ?? new Map();
+}
+
+/** Folded word -> its dictionary senses joined into one meaning. Words with no entry are absent. */
+export function lookupMeanings(words: readonly string[], language: string): Map<string, string> {
+  const meanings = new Map<string, string[]>();
+  const dictionary = getDb(language);
+  const keys = [...new Set(words.map((word) => foldKey(word, language)).filter(Boolean))];
+  if (!dictionary || keys.length === 0) return new Map();
+  try {
+    const rows = dictionary.prepare(BASE_FORM_SENSES_SQL).all(JSON.stringify(keys)) as Array<{
+      word: string;
+      gloss: string;
+    }>;
+    for (const row of rows) {
+      meanings.set(row.word, [...(meanings.get(row.word) ?? []), row.gloss]);
+    }
+  } catch (err) {
+    console.warn(`[dictionary] meanings failed for ${language}:`, err);
+  }
+  return new Map([...meanings].map(([word, glosses]) => [word, glosses.join('; ')]));
+}
+
+/** Folded word -> every base word it can be a form of, best guess first. */
+export function lookupBaseForms(words: readonly string[], language: string): Map<string, string[]> {
+  const lookup = readBaseFormsFor(words, language);
+  const result = new Map<string, string[]>();
+  if (!lookup) return result;
+  for (const [key, bases] of lookup.bases) {
+    const ranked = lookup.options.get(key)?.map((option) => option.word) ?? [];
+    result.set(key, [...new Set([...ranked, ...bases])]);
+  }
+  return result;
+}
+
+/** Folded word -> the base word to save it under, for words that have a different one. */
+export function lookupPrimaryBaseWords(
+  words: readonly string[],
+  language: string,
+): Map<string, string> {
+  const result = new Map<string, string>();
+  for (const [key, options] of baseOptionsForWords(words, language)) {
+    if (options[0].word !== key) result.set(key, options[0].word);
+  }
+  return result;
 }
 
 // kaikki tags a form it could not classify as `error-unrecognized-form`, and a

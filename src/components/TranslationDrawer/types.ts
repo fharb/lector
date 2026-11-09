@@ -13,6 +13,8 @@ export interface ExpandedDictionaryEntry {
   senses: Array<{ partOfSpeech: string; gloss: string }>;
   relatedForms?: Array<{ form: string; relation: string }>;
   lemmaInfo?: { stem: string; label: string };
+  stressIndex?: number;
+  baseOptions?: Array<{ word: string; translation: string }>;
   /** `dict` = built-in kaikki dict, `cache` = user-learned AI translation. */
   source?: 'dict' | 'cache';
 }
@@ -21,6 +23,11 @@ export interface TranslationDrawerProps {
   isOpen: boolean;
   word: string;
   sentence: string;
+
+  /** Base forms this word can be saved as. Empty when it saves as written. */
+  saveOptions?: string[];
+  saveTarget?: string;
+  onChooseSaveTarget?: (word: string) => void;
 
   /** Rich definition from local dictionary. Null while loading or when not found. */
   entry?: ExpandedDictionaryEntry | null;

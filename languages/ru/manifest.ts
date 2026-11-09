@@ -216,4 +216,31 @@ export const ru = {
     kind: 'alpha-spaced' as const,
     hasCase: true,
   },
+  wordForms: {
+    // Bare `feminine` and aspect tags are left out: they link separate words
+    // (учительница → учитель, прочитать → читать).
+    inflectionTags: [
+      'nominative',
+      'genitive',
+      'dative',
+      'accusative',
+      'instrumental',
+      'prepositional',
+      'locative',
+      'vocative',
+      'past',
+      'present',
+      'future',
+      'imperative',
+      'first-person',
+      'second-person',
+      'third-person',
+      'short-form',
+      'participle',
+      'ё-spelling',
+    ],
+    // kaikki lists a declined participle under the participle: читающего → читающий → читать.
+    secondStepTags: ['participle', 'ё-spelling'],
+    plainSpelling: ['ё', 'е'] as const,
+  },
 };

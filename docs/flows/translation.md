@@ -47,6 +47,8 @@ flowchart TD
 
 If the pack file does not exist, the curated steps skip. Only the user cache can hit.
 
+For Russian, `lookupWord` adds `stressIndex` from the IPA of the word's own row (`languages/ru/stress.ts`). `StressedWord` marks that vowel in the drawer. A form with no row of its own, or with an IPA that does not line up, shows no mark.
+
 ### Key files
 
 | Role | Path | Function |

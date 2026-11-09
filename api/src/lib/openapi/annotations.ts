@@ -323,6 +323,10 @@ export const schemas: Record<string, JsonSchema> = {
       language: { type: 'string' },
       pushedToAnki: { type: 'integer', enum: [0, 1] },
       ankiNoteId: { type: ['integer', 'null'] },
+      sentenceWord: {
+        ...NULLABLE_STRING,
+        description: 'The form in `sentence` when `text` holds its base form.',
+      },
       createdAt: ISO_DATE_TIME,
     },
     required: ['id', 'text', 'type', 'state', 'language', 'createdAt'],
@@ -429,6 +433,19 @@ export const schemas: Record<string, JsonSchema> = {
       rank: { type: 'integer', description: 'Frequency rank in the language.' },
       ipa: { type: 'string' },
       etymology: { type: 'string' },
+      stressIndex: {
+        type: 'integer',
+        description: 'Russian only. Position of the stressed vowel in the folded word.',
+      },
+      baseOptions: {
+        type: 'array',
+        description: 'Base forms to save this word under, best guess first.',
+        items: {
+          type: 'object',
+          properties: { word: { type: 'string' }, translation: { type: 'string' } },
+          required: ['word', 'translation'],
+        },
+      },
       senses: {
         type: 'array',
         items: {
@@ -855,6 +872,24 @@ const libraryOps: Record<string, OperationDoc> = {
       },
     },
   },
+  'GET /api/lessons/{id}/base-forms': {
+    notFound: true,
+    summary: 'Get the base words of the inflected forms in a lesson',
+    description:
+      'Returns the base words that each inflected word in the lesson can belong to. The keys are the folded word forms the reader looks words up by. The object is empty for a language that does not recognize word forms, and a word with no base word is absent.',
+    tag: 'Library',
+    sharedParams: LANG,
+    pathParams: { id: 'Lesson identifier.' },
+    responses: {
+      '200': {
+        description: 'Folded word to its base words.',
+        schema: {
+          type: 'object',
+          additionalProperties: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+  },
   'GET /api/lessons/{id}/audio': {
     notFound: 'The lesson has no audio, or the stored file is gone.',
     summary: 'Stream the audio of a lesson',
@@ -1167,6 +1202,32 @@ const vocabOps: Record<string, OperationDoc> = {
     tag: 'Vocabulary',
     sharedParams: LANG,
     responses: { '200': { description: 'Word to state map.', schema: ref('KnownWordMap') } },
+  },
+  'POST /api/known-words/remove': {
+    summary: 'Forget words so they show as new',
+    description: 'A word with a saved vocabulary entry keeps the entry, in the new state.',
+    tag: 'Vocabulary',
+    requestBody: {
+      required: true,
+      schema: {
+        type: 'object',
+        properties: {
+          language: { type: 'string' },
+          words: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['words'],
+      },
+    },
+    responses: {
+      '200': {
+        description: 'The words are forgotten.',
+        schema: {
+          type: 'object',
+          properties: { success: { type: 'boolean' }, count: { type: 'integer' } },
+          required: ['success', 'count'],
+        },
+      },
+    },
   },
   'POST /api/known-words': {
     summary: 'Update word knowledge states in bulk',
@@ -1507,6 +1568,63 @@ const dictionaryOps: Record<string, OperationDoc> = {
           type: 'object',
           properties: { entry: { oneOf: [ref('DictionaryEntry'), { type: 'null' }] } },
           required: ['entry'],
+        },
+      },
+    },
+  },
+  'POST /api/dictionary/meanings': {
+    summary: 'Get the dictionary meanings of several words',
+    description: 'Returns the joined senses of each word. A word with no entry is absent.',
+    tag: 'Dictionary',
+    requestBody: {
+      required: true,
+      schema: {
+        type: 'object',
+        properties: {
+          words: { type: 'array', items: { type: 'string' }, maxItems: 50000 },
+          language: { type: 'string' },
+        },
+        required: ['words'],
+      },
+    },
+    responses: {
+      '200': {
+        description: 'Folded word to meaning.',
+        schema: {
+          type: 'object',
+          properties: {
+            meanings: { type: 'object', additionalProperties: { type: 'string' } },
+          },
+          required: ['meanings'],
+        },
+      },
+    },
+  },
+  'POST /api/dictionary/base-words': {
+    summary: 'Find the base words of inflected forms',
+    description:
+      'Returns the base word to save each form under. A word that is already a base word, or that the dictionary cannot resolve, is absent. The object is empty for a language that does not recognize word forms.',
+    tag: 'Dictionary',
+    requestBody: {
+      required: true,
+      schema: {
+        type: 'object',
+        properties: {
+          words: { type: 'array', items: { type: 'string' }, maxItems: 50000 },
+          language: { type: 'string' },
+        },
+        required: ['words'],
+      },
+    },
+    responses: {
+      '200': {
+        description: 'Folded form to base word.',
+        schema: {
+          type: 'object',
+          properties: {
+            baseWords: { type: 'object', additionalProperties: { type: 'string' } },
+          },
+          required: ['baseWords'],
         },
       },
     },

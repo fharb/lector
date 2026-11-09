@@ -7,7 +7,13 @@ import { getPageCount, clampPage, paginate } from '@/lib/pagination';
 import { SETTINGS_KEYS } from '@/app/settings/constants';
 import VocabRow from './components/VocabRow';
 import PaginationControls from './components/PaginationControls';
-import { stateFilters, stateOrder, DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from './constants';
+import {
+  stateFilters,
+  stateMenuOptions,
+  stateOrder,
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZE_OPTIONS,
+} from './constants';
 import { AnkiCardType, SortDirection, SortField, VocabListProps } from './types';
 import { useActiveLanguage } from '@/utils/hooks';
 import { Button, buttonVariants } from '../ui/button';
@@ -20,6 +26,7 @@ export default function VocabList({
   onEntryClick,
   onExportToAnki,
   onMarkAsKnown,
+  onSetState,
   onSyncWithAnki,
   showAnkiOnboardingTip = false,
   onAnkiOnboardingTipDone,
@@ -268,6 +275,17 @@ export default function VocabList({
     }
   };
 
+  const handleBulkState = async (state: WordState) => {
+    if (selectedIds.size === 0) return;
+    setIsMarkingKnown(true);
+    try {
+      await onSetState(Array.from(selectedIds), state);
+      setSelectedIds(new Set());
+    } finally {
+      setIsMarkingKnown(false);
+    }
+  };
+
   const handleSyncWithAnki = async () => {
     if (!onSyncWithAnki) return;
     onAnkiOnboardingTipDone?.();
@@ -355,6 +373,23 @@ export default function VocabList({
             </>
           )}
         </Button>
+        <select
+          value=""
+          data-testid="bulk-state"
+          aria-label="Set state of selected words"
+          disabled={!someSelected || isMarkingKnown}
+          onChange={(e) => void handleBulkState(e.target.value as WordState)}
+          className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:ring-1 focus:ring-ring focus:outline-none disabled:opacity-50"
+        >
+          <option value="" disabled>
+            Set state ({selectedIds.size})
+          </option>
+          {stateMenuOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
         <Button
           onClick={handleBulkDeleteButtonPressed}
           variant="destructive"
@@ -491,6 +526,7 @@ export default function VocabList({
                   isSelected={selectedIds.has(entry.id)}
                   onSelect={handleSelect}
                   onClick={onEntryClick}
+                  onStateChange={(id, state) => onSetState([id], state)}
                 />
               ))
             )}

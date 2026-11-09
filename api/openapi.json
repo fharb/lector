@@ -3,7 +3,7 @@
   "info": {
     "title": "Lector API",
     "version": "1.0.0",
-    "description": "Lector reads and studies text in a target language. This document describes the\nHTTP API. The Lector web client and every personal access token use this same\nAPI.\n\n## Authentication\n\nEach `/api/*` endpoint needs a credential. Two kinds work:\n\n- A personal access token, sent as `Authorization: Bearer <token>`. Create a\n  token in Settings, under API tokens. Scripts and integrations use this kind.\n- A session cookie, which the browser client sends. Lector Cloud only.\n\nEach token carries scopes. Every endpoint below states the scope that it needs.\nSome resources have no scope at all. A token cannot reach those resources, so\nthis document leaves them out. Token management, billing, moderation and the\nadmin console are browser-only surfaces.\n\n## Languages\n\nLector separates your data by language. Most endpoints accept an optional\n`language` query parameter. Give it a language pack code, for example `af`, `es`\nor `grc`. If you omit the parameter, the API uses the active language of the\naccount.\n\n## Errors\n\nAn error response carries a JSON body with an `error` string. A `429` response\nalso names the plan limit that stopped the call.\n\n## Accounts\n\nThe cloud sign-in, sign-up, verification and two-factor endpoints are at\n`/api/auth/*`. Better Auth serves those endpoints and documents its own\ncontract. This document does not describe them.\n",
+    "description": "Lector reads and studies text in a target language. This document describes the\r\nHTTP API. The Lector web client and every personal access token use this same\r\nAPI.\r\n\r\n## Authentication\r\n\r\nEach `/api/*` endpoint needs a credential. Two kinds work:\r\n\r\n- A personal access token, sent as `Authorization: Bearer <token>`. Create a\r\n  token in Settings, under API tokens. Scripts and integrations use this kind.\r\n- A session cookie, which the browser client sends. Lector Cloud only.\r\n\r\nEach token carries scopes. Every endpoint below states the scope that it needs.\r\nSome resources have no scope at all. A token cannot reach those resources, so\r\nthis document leaves them out. Token management, billing, moderation and the\r\nadmin console are browser-only surfaces.\r\n\r\n## Languages\r\n\r\nLector separates your data by language. Most endpoints accept an optional\r\n`language` query parameter. Give it a language pack code, for example `af`, `es`\r\nor `grc`. If you omit the parameter, the API uses the active language of the\r\naccount.\r\n\r\n## Errors\r\n\r\nAn error response carries a JSON body with an `error` string. A `429` response\r\nalso names the plan limit that stopped the call.\r\n\r\n## Accounts\r\n\r\nThe cloud sign-in, sign-up, verification and two-factor endpoints are at\r\n`/api/auth/*`. Better Auth serves those endpoints and documents its own\r\ncontract. This document does not describe them.\r\n",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
@@ -4169,6 +4169,123 @@
         "x-token-scope": "data:import"
       }
     },
+    "/api/dictionary/base-words": {
+      "post": {
+        "operationId": "postApiDictionaryBaseWords",
+        "summary": "Find the base words of inflected forms",
+        "description": "Returns the base word to save each form under. A word that is already a base word, or that the dictionary cannot resolve, is absent. The object is empty for a language that does not recognize word forms.",
+        "tags": [
+          "Dictionary"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "words": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 50000
+                  },
+                  "language": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "words"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Folded form to base word.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "baseWords": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "baseWords"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is malformed, or a field is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The credential is missing, invalid or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token does not carry the scope this endpoint needs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A plan limit or a rate limit stopped the call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The API failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "PersonalAccessToken": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "x-token-scope": "vocab:write"
+      }
+    },
     "/api/dictionary/cache": {
       "post": {
         "operationId": "postApiDictionaryCache",
@@ -4401,6 +4518,123 @@
           }
         ],
         "x-token-scope": "vocab:read"
+      }
+    },
+    "/api/dictionary/meanings": {
+      "post": {
+        "operationId": "postApiDictionaryMeanings",
+        "summary": "Get the dictionary meanings of several words",
+        "description": "Returns the joined senses of each word. A word with no entry is absent.",
+        "tags": [
+          "Dictionary"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "words": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 50000
+                  },
+                  "language": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "words"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Folded word to meaning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "meanings": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "meanings"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is malformed, or a field is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The credential is missing, invalid or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token does not carry the scope this endpoint needs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A plan limit or a rate limit stopped the call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The API failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "PersonalAccessToken": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "x-token-scope": "vocab:write"
       }
     },
     "/api/explain": {
@@ -6434,6 +6668,123 @@
         "x-token-scope": "vocab:write"
       }
     },
+    "/api/known-words/remove": {
+      "post": {
+        "operationId": "postApiKnownWordsRemove",
+        "summary": "Forget words so they show as new",
+        "description": "A word with a saved vocabulary entry keeps the entry, in the new state.",
+        "tags": [
+          "Vocabulary"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "language": {
+                    "type": "string"
+                  },
+                  "words": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "words"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The words are forgotten.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "count"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is malformed, or a field is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The credential is missing, invalid or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token does not carry the scope this endpoint needs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A plan limit or a rate limit stopped the call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The API failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "PersonalAccessToken": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "x-token-scope": "vocab:write"
+      }
+    },
     "/api/learner-events": {
       "post": {
         "operationId": "postApiLearnerEvents",
@@ -6945,6 +7296,107 @@
           },
           "404": {
             "description": "The lesson has no audio, or the stored file is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A plan limit or a rate limit stopped the call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The API failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "PersonalAccessToken": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "x-token-scope": "collections:read"
+      }
+    },
+    "/api/lessons/{id}/base-forms": {
+      "get": {
+        "operationId": "getApiLessonsByIdBaseForms",
+        "summary": "Get the base words of the inflected forms in a lesson",
+        "description": "Returns the base words that each inflected word in the lesson can belong to. The keys are the folded word forms the reader looks words up by. The object is empty for a language that does not recognize word forms, and a word with no base word is absent.",
+        "tags": [
+          "Library"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Lesson identifier.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/LanguageQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Folded word to its base words.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The credential is missing, invalid or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token does not carry the scope this endpoint needs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record, in this account and language.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11631,6 +12083,13 @@
               "null"
             ]
           },
+          "sentenceWord": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The form in `sentence` when `text` holds its base form."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -11923,6 +12382,29 @@
           },
           "etymology": {
             "type": "string"
+          },
+          "stressIndex": {
+            "type": "integer",
+            "description": "Russian only. Position of the stressed vowel in the folded word."
+          },
+          "baseOptions": {
+            "type": "array",
+            "description": "Base forms to save this word under, best guess first.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "word": {
+                  "type": "string"
+                },
+                "translation": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "word",
+                "translation"
+              ]
+            }
           },
           "senses": {
             "type": "array",

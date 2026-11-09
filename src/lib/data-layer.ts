@@ -533,6 +533,22 @@ export async function getLessonReadings(
   return new Map(Object.entries(result ?? {}));
 }
 
+/** Folded word -> the base words it can be a form of. `language` must be the lesson's. */
+export async function getLessonBaseForms(
+  lessonId: string,
+  language: string,
+): Promise<Map<string, string[]>> {
+  const result = await cachedQuery(
+    activeLanguageQueryKey(READINGS_QUERY_SCOPE, ['base-forms', lessonId], language),
+    async () => {
+      const res = await apiFetch(`/api/lessons/${lessonId}/base-forms?language=${language}`);
+      if (!res.ok) throw await apiError(res, 'Could not load word forms');
+      return (await res.json()) as Record<string, string[]>;
+    },
+  );
+  return new Map(Object.entries(result ?? {}));
+}
+
 export async function getVocabEntry(id: string): Promise<VocabEntry | undefined> {
   return cachedQuery(activeLanguageQueryKey(VOCAB_QUERY_SCOPE, ['id', id]), async () => {
     const res = await apiFetch(`/api/vocab/${id}`);
@@ -693,6 +709,25 @@ export async function getWordState(word: string): Promise<WordState | undefined>
   return lookupByVocabKeys(map, word, getActivePack());
 }
 
+/** Input word -> the base word to save it under. Empty for a pack without word forms. */
+export async function getBaseWords(words: string[]): Promise<Map<string, string>> {
+  const pack = getActivePack();
+  if (!pack.wordForms || words.length === 0) return new Map();
+  const res = await apiFetch('/api/dictionary/base-words', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ words, language: getActiveLanguage() }),
+  });
+  if (!res.ok) return new Map();
+  const { baseWords } = (await res.json()) as { baseWords: Record<string, string> };
+  return new Map(
+    words.flatMap((word) => {
+      const base = baseWords[foldWord(word, pack)];
+      return base ? [[word, base] as const] : [];
+    }),
+  );
+}
+
 export async function updateWordState(word: string, state: WordState): Promise<boolean> {
   // Signals success (#232): apiFetch never throws (it returns a synthetic 502
   // on network failure), so callers must check res.ok or a failed save looks
@@ -701,7 +736,9 @@ export async function updateWordState(word: string, state: WordState): Promise<b
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      updates: [{ word: foldWord(word, getActivePack()), state }],
+      updates: [
+        { word: (await getBaseWords([word])).get(word) ?? foldWord(word, getActivePack()), state },
+      ],
       language: getActiveLanguage(),
     }),
   });
@@ -767,6 +804,35 @@ export async function getAllKnownWords(): Promise<KnownWord[]> {
   const res = await apiFetch(`/api/known-words${langParam()}`);
   const data = await res.json();
   return Object.entries(data).map(([word, state]) => ({ word, state: state as WordState }));
+}
+
+export async function removeKnownWords(words: string[]): Promise<void> {
+  const res = await apiFetch('/api/known-words/remove', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ words, language: getActiveLanguage() }),
+  });
+  await requireOk(res, 'Could not remove known words');
+  invalidateVocab();
+  invalidateFluencyStats();
+}
+
+/** Input word -> its dictionary meaning, for words the dictionary has. */
+export async function getVocabMeanings(words: string[]): Promise<Map<string, string>> {
+  const pack = getActivePack();
+  const res = await apiFetch('/api/dictionary/meanings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ words, language: getActiveLanguage() }),
+  });
+  if (!res.ok) return new Map();
+  const { meanings } = (await res.json()) as { meanings: Record<string, string> };
+  return new Map(
+    words.flatMap((word) => {
+      const meaning = meanings[foldWord(word, pack)];
+      return meaning ? [[word, meaning] as const] : [];
+    }),
+  );
 }
 
 export async function bulkUpdateWordStates(

@@ -10,7 +10,7 @@ import {
   tokenizeWords,
   type LanguageConfig,
 } from '../lib/languages';
-import { lookupReadings } from '../lib/dictionary-db';
+import { lookupBaseForms, lookupReadings } from '../lib/dictionary-db';
 import { analyserReadings } from '../lib/ja-morphology';
 import { resolveLanguage } from '../lib/active-language';
 import { getCurrentUserId } from '../lib/user';
@@ -124,6 +124,25 @@ app.get('/:id/readings', (c) => {
   }
 
   return c.json(Object.fromEntries(lookupReadings(lessonReadingWords(lesson, pack), lang)));
+});
+
+// GET /api/lessons/:id/base-forms
+// Folded word -> the base words it can be a form of. `{}` unless the pack sets wordForms.
+app.get('/:id/base-forms', (c) => {
+  const userId = getCurrentUserId(c);
+  const id = c.req.param('id');
+  const lang = resolveLanguage(c.req.query('language'), userId);
+  const lesson = db
+    .prepare(
+      'SELECT textContent, segmentWords FROM lessons WHERE id = ? AND userId = ? AND language = ?',
+    )
+    .get(id, userId, lang) as Pick<LessonRow, 'textContent' | 'segmentWords'> | undefined;
+  if (!lesson) {
+    return c.json({ error: 'Lesson not found' }, 404);
+  }
+
+  const words = lessonReadingWords(lesson, getLanguageConfig(lang));
+  return c.json(Object.fromEntries(lookupBaseForms(words, lang)));
 });
 
 // GET /api/lessons/:id/audio (#185)

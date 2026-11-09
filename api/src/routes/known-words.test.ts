@@ -91,3 +91,67 @@ describe('known-words route', () => {
     );
   });
 });
+
+describe('POST /remove', () => {
+  beforeEach(reset);
+  afterEach(reset);
+
+  const remove = (body: unknown) =>
+    app.request('/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  const insert = (userId: string, word: string) =>
+    db
+      .prepare('INSERT INTO knownWords (userId, word, language, state) VALUES (?, ?, ?, ?)')
+      .run(userId, word, 'af', 'known');
+  const count = (userId: string) =>
+    (
+      db.prepare('SELECT COUNT(*) AS n FROM knownWords WHERE userId = ?').get(userId) as {
+        n: number;
+      }
+    ).n;
+
+  test('forgets the words, matching on the folded key', async () => {
+    insert('local', 'huis');
+    insert('local', 'boom');
+
+    const response = await remove({ words: ['Huis'], language: 'af' });
+
+    expect(response.status).toBe(200);
+    expect(count('local')).toBe(1);
+  });
+
+  test('keeps a saved entry and sets it back to new', async () => {
+    db.prepare("DELETE FROM vocab WHERE id = 'remove-entry'").run();
+    insert('local', 'huis');
+    db.prepare(
+      `INSERT INTO vocab (id, text, type, sentence, translation, state, stateUpdatedAt, language, createdAt, userId)
+       VALUES ('remove-entry', 'huis', 'word', '', '', 'known', '2026-01-01', 'af', '2026-01-01', 'local')`,
+    ).run();
+
+    await remove({ words: ['huis'], language: 'af' });
+
+    expect(db.prepare("SELECT state FROM vocab WHERE id = 'remove-entry'").get()).toEqual({
+      state: 'new',
+    });
+    expect(
+      db.prepare("SELECT state FROM knownWords WHERE userId = 'local' AND word = 'huis'").get(),
+    ).toEqual({ state: 'new' });
+    db.prepare("DELETE FROM vocab WHERE id = 'remove-entry'").run();
+  });
+
+  test('leaves another tenant alone', async () => {
+    insert(INTRUDER, 'huis');
+
+    await remove({ words: ['huis'], language: 'af' });
+
+    expect(count(INTRUDER)).toBe(1);
+  });
+
+  test('rejects a body without a word list', async () => {
+    expect((await remove({ language: 'af' })).status).toBe(400);
+    expect((await remove({ words: [1], language: 'af' })).status).toBe(400);
+  });
+});

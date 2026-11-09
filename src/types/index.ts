@@ -135,6 +135,10 @@ export interface VocabEntry {
   createdAt: Date;
   pushedToAnki: boolean;
   ankiNoteId?: number;
+  /** The form in `sentence` when `text` holds its base form. */
+  sentenceWord?: string | null;
+  /** A list row built from knownWords alone, with no vocab row behind it. */
+  knownOnly?: boolean;
 }
 
 export interface KnownWord {

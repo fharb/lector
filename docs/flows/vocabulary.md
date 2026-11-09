@@ -35,6 +35,10 @@ Keyboard: `K` marks Known. Keys `1` to `4` set levels. `X` marks Ignore. IME com
 
 `POST /api/known-words` is not on the drawer path. The reader colours from `GET /api/known-words` at lesson load, then from the optimistic map.
 
+For a pack that sets `wordForms` (Russian, French), the reader also loads `GET /api/lessons/:id/base-forms`. `withRecognizedForms` gives a form the strongest state of its base words. A state on the form itself takes priority. The app stores nothing for a recognized form. A save from the reader stores the base form in `vocab.text`, from `vocabTarget`, and the tapped form in `vocab.sentenceWord` for cloze cards. A lookup returns the choices in `baseOptions`, and the tapped form is also offered. "Mark remaining" writes one base word per family through `remainingBaseWords`. Imports and Anki sync resolve base words through `POST /api/dictionary/base-words`. `languages/<code>/content/base-preferences.json`, written by `api/src/scripts/rank-base-forms.ts`, sets the first guess for an ambiguous form.
+
+The vocab page shows rated words with no `vocab` row as well, through `withKnownOnlyEntries`. `setListEntriesState` changes a row: a learning level creates a `vocab` row, and unknown calls `POST /api/known-words/remove`. The route keeps a saved entry, in the new state. A word that starts with a digit is a number: `withIgnoredNumbers` shows it as ignored, and the app does not look it up or save it from the reader. `MarkKnownUnknown` in the reader sends the words from `knownStoredWords` to the same route.
+
 Ignore does not write the translation cache. Known and levels do, for single words with no dict hit. See [translation.md](translation.md#cache-accepted-translation).
 
 Practice mastery 100 calls `updateWordState` in `persistReview`. That is `POST /api/known-words`.

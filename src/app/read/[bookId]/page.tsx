@@ -8,6 +8,7 @@ import OnboardingCoach from '@/components/OnboardingCoach';
 import TranslationDrawer, { TranslationDrawerSlot } from '@/components/TranslationDrawer';
 import { Button } from '@/components/ui/button';
 import ListenAlong from '@/components/ListenAlong';
+import MarkKnownUnknown from '@/components/MarkKnownUnknown';
 import MarkRemainingKnown from '@/components/MarkRemainingKnown';
 import {
   type Lesson,
@@ -19,11 +20,13 @@ import {
   createOnboardingCloze,
   getLesson,
   getLessonsForCollection,
+  getLessonBaseForms,
   getLessonSegments,
   lessonAudioUrl,
   retryTranscription,
   getKnownWordsMap,
   bulkUpdateWordStates,
+  removeKnownWords,
   saveVocab,
   getVocabByText,
   updateVocabState,
@@ -56,6 +59,14 @@ import { WordPanelState } from '../types';
 import { useActiveLanguage } from '@/utils/hooks';
 import { patchWordState, patchWordStates } from '@/components/MarkdownReader/optimistic-word-state';
 import {
+  isNumberWord,
+  vocabTarget,
+  withIgnoredNumbers,
+  withRecognizedForms,
+} from '@/components/MarkdownReader/word-families';
+import {
+  knownStoredWords,
+  remainingBaseWords,
   remainingWordKeys,
   tappableMarkdownText,
   uniqueWordKeys,
@@ -94,6 +105,8 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   const [listenMode, setListenMode] = useState(false);
   const [readerWordStates, setReaderWordStates] = useState<Map<string, WordState>>(new Map());
   const readerWordStatesRef = useRef(readerWordStates);
+  const [baseForms, setBaseForms] = useState<Map<string, string[]>>(new Map());
+  const [chosenBase, setChosenBase] = useState<{ word: string; base: string } | null>(null);
   const readerWordStateLoadRef = useRef<{
     key: string;
     promise: Promise<Map<string, WordState>>;
@@ -251,22 +264,83 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     );
   }, [lesson, lessonPack]);
 
+  const recognizesForms = Boolean(lessonPack.wordForms) && lessonPack.code === activeLang.code;
+  const lessonIdForForms = lesson?.id;
+  const lessonText = lesson?.textContent;
+  useEffect(() => {
+    if (!recognizesForms || !lessonIdForForms) return;
+    let cancelled = false;
+    getLessonBaseForms(lessonIdForForms, lessonPack.code).then(
+      (forms) => {
+        if (!cancelled) setBaseForms(forms);
+      },
+      () => {
+        if (!cancelled) setBaseForms(new Map());
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [lessonIdForForms, lessonPack.code, lessonText, recognizesForms]);
+
+  const displayedWordStates = useMemo(
+    () =>
+      withIgnoredNumbers(
+        recognizesForms ? withRecognizedForms(readerWordStates, baseForms) : readerWordStates,
+        lessonWordKeys,
+      ),
+    [baseForms, lessonWordKeys, readerWordStates, recognizesForms],
+  );
+
   // The state map and the bulk write both use the active language.
   const remainingWords = useMemo(
     () =>
       lessonPack.code === activeLang.code
-        ? remainingWordKeys(lessonWordKeys, readerWordStates, lessonPack)
+        ? remainingWordKeys(lessonWordKeys, displayedWordStates, lessonPack)
         : [],
-    [activeLang.code, lessonPack, lessonWordKeys, readerWordStates],
+    [activeLang.code, displayedWordStates, lessonPack, lessonWordKeys],
   );
 
-  const markRemainingKnown = useCallback(async () => {
-    const patch = patchWordStates(readerWordStatesRef.current, remainingWords, 'known');
+  const remainingBases = useMemo(
+    () => (recognizesForms ? remainingBaseWords(remainingWords, baseForms) : remainingWords),
+    [baseForms, recognizesForms, remainingWords],
+  );
+
+  const knownInLesson = useMemo(
+    () =>
+      lessonPack.code === activeLang.code
+        ? knownStoredWords(
+            lessonWordKeys.filter((key) => !isNumberWord(key)),
+            readerWordStates,
+            recognizesForms ? baseForms : new Map(),
+            lessonPack,
+          )
+        : [],
+    [activeLang.code, baseForms, lessonPack, lessonWordKeys, readerWordStates, recognizesForms],
+  );
+
+  const markKnownUnknown = useCallback(async () => {
+    const patch = patchWordStates(readerWordStatesRef.current, knownInLesson, 'new');
     readerWordStatesRef.current = patch.map;
     setReaderWordStates(patch.map);
 
     try {
-      await bulkUpdateWordStates(remainingWords.map((word) => ({ word, state: 'known' })));
+      await removeKnownWords(knownInLesson);
+    } catch {
+      const restored = patch.rollback(readerWordStatesRef.current);
+      readerWordStatesRef.current = restored;
+      setReaderWordStates(restored);
+      toast.error('Could not mark the words as unknown — check your connection.');
+    }
+  }, [knownInLesson]);
+
+  const markRemainingKnown = useCallback(async () => {
+    const patch = patchWordStates(readerWordStatesRef.current, remainingBases, 'known');
+    readerWordStatesRef.current = patch.map;
+    setReaderWordStates(patch.map);
+
+    try {
+      await bulkUpdateWordStates(remainingBases.map((word) => ({ word, state: 'known' })));
     } catch (err) {
       const restored = patch.rollback(readerWordStatesRef.current);
       readerWordStatesRef.current = restored;
@@ -278,8 +352,8 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
       return;
     }
 
-    await incrementDailyStat('wordsMarkedKnown', remainingWords.length);
-  }, [remainingWords]);
+    await incrementDailyStat('wordsMarkedKnown', remainingBases.length);
+  }, [remainingBases]);
 
   // Explicitly record a real reader open (not the background GET /lessons)
   // and remember tomorrow's next lesson. Both writes are idempotent so a
@@ -352,7 +426,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
         if (state.startsWith('level') && entry.type === 'word') {
           const card = await createOnboardingCloze({
             vocabId: entry.id,
-            word: entry.text,
+            word: entry.sentenceWord ?? entry.text,
             sentence: entry.sentence,
             translation: entry.translation,
           });
@@ -378,6 +452,8 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   // Handle word click from reader
   const handleWordClick = useCallback(
     async (word: string, sentence: string, source?: WordSource) => {
+      if (isNumberWord(word)) return;
+
       // Remember (or clear) the transcript segment this word came from so a
       // subsequent Anki mine can attach the timestamped source link.
       currentWordSourceRef.current = source ?? null;
@@ -429,6 +505,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
       existingEntryLookup.current = lookupPromise;
       const existingEntry = await lookupPromise;
       if (requestId !== translationRequestId.current) return;
+      setChosenBase(existingEntry ? { word, base: foldWord(word, activeLang) } : null);
       const hasTranslation = existingEntry?.translation && existingEntry.translation.length > 0;
 
       setWordPanel((prev) => ({
@@ -479,6 +556,16 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
           dictEntry = null;
         }
         if (requestId !== translationRequestId.current) return;
+
+        const wordKey = foldWord(word, activeLang);
+        const baseWord = dictEntry?.baseOptions?.[0]?.word ?? baseForms.get(wordKey)?.[0];
+        if (activeLang.wordForms && !existingEntry && baseWord && baseWord !== wordKey) {
+          const baseLookup = getVocabByText(baseWord);
+          existingEntryLookup.current = baseLookup;
+          const baseEntry = await baseLookup;
+          if (requestId !== translationRequestId.current) return;
+          if (baseEntry) setWordPanel((prev) => ({ ...prev, existingEntry: baseEntry }));
+        }
 
         if (dictEntry && dictEntry.senses.length > 0) {
           const translation = dictEntry.senses.map((s) => s.gloss).join('; ');
@@ -532,7 +619,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
         }
       }
     },
-    [activeLang, trackOnboardingLookup],
+    [baseForms, activeLang, trackOnboardingLookup],
   );
 
   const closeWordPanel = useCallback(() => {
@@ -641,6 +728,39 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     return undefined;
   }, [wordPanel.existingEntry]);
 
+  const panelKey = foldWord(wordPanel.word, activeLang);
+  const lessonBases = baseForms.get(panelKey);
+  const panelOptions = wordPanel.dictEntry?.baseOptions;
+  const vocabWord = useMemo(
+    () =>
+      vocabTarget({
+        word: wordPanel.word,
+        pack: activeLang,
+        translation: wordPanel.translation,
+        options: panelOptions,
+        lessonBases,
+        chosen: chosenBase?.word === wordPanel.word ? chosenBase.base : undefined,
+      }),
+    [activeLang, chosenBase, lessonBases, panelOptions, wordPanel.translation, wordPanel.word],
+  );
+  const saveOptions = useMemo(() => {
+    if (!activeLang.wordForms || wordPanel.word.includes(' ')) return [];
+    const words = panelOptions?.map((option) => option.word) ?? lessonBases?.slice(0, 1) ?? [];
+    if (words.length === 1 && words[0] === panelKey) return [];
+    return words.length > 0 && !words.includes(panelKey) ? [...words, panelKey] : words;
+  }, [activeLang.wordForms, lessonBases, panelKey, panelOptions, wordPanel.word]);
+
+  const chooseBaseWord = useCallback(
+    async (base: string) => {
+      setChosenBase({ word: wordPanel.word, base });
+      const lookup = getVocabByText(base);
+      existingEntryLookup.current = lookup;
+      const existingEntry = await lookup;
+      setWordPanel((prev) => ({ ...prev, existingEntry: existingEntry || null }));
+    },
+    [wordPanel.word],
+  );
+
   // Persist the current AI translation into the on-device dictionary cache.
   // Called from accept actions (Save / Known / level). No-op for phrases,
   // dictionary hits (already canonical), and when the AI didn't return
@@ -681,10 +801,11 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     const isPhrase = wordPanel.word.includes(' ');
     const entry: VocabEntry = {
       id: existing?.id || uuidv4(),
-      text: foldWord(wordPanel.word, activeLang),
+      text: vocabWord.text,
+      sentenceWord: vocabWord.sentenceWord,
       type: isPhrase ? 'phrase' : 'word',
       sentence: wordPanel.sentence,
-      translation: wordPanel.translation,
+      translation: vocabWord.translation || '',
       state: existing?.state || 'level1',
       stateUpdatedAt: new Date(),
       reviewCount: existing?.reviewCount || 0,
@@ -693,7 +814,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
       pushedToAnki: existing?.pushedToAnki || false,
       ankiNoteId: existing?.ankiNoteId,
     };
-    const rollbackReaderState = applyReaderWordState(wordPanel.word, entry.state);
+    const rollbackReaderState = applyReaderWordState(vocabWord.text, entry.state);
 
     // A failed save must not paint the word as saved (#232).
     if (!(await saveVocab(entry))) {
@@ -711,8 +832,8 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     }));
   }, [
     wordPanel,
+    vocabWord,
     lessonId,
-    activeLang,
     resolveExistingEntry,
     applyReaderWordState,
     persistAcceptedTranslation,
@@ -720,7 +841,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   ]);
 
   const markAsKnown = useCallback(async () => {
-    const rollbackReaderState = applyReaderWordState(wordPanel.word, 'known');
+    const rollbackReaderState = applyReaderWordState(vocabWord.text, 'known');
     let existing: VocabEntry | undefined;
     try {
       existing = await resolveExistingEntry();
@@ -734,10 +855,11 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     if (!existing) {
       const entry: VocabEntry = {
         id: uuidv4(),
-        text: foldWord(wordPanel.word, activeLang),
+        text: vocabWord.text,
+        sentenceWord: vocabWord.sentenceWord,
         type: 'word',
         sentence: wordPanel.sentence,
-        translation: wordPanel.translation || '',
+        translation: vocabWord.translation || '',
         state: 'known',
         stateUpdatedAt: new Date(),
         reviewCount: 0,
@@ -766,8 +888,8 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     closeWordPanel();
   }, [
     wordPanel,
+    vocabWord,
     lessonId,
-    activeLang,
     applyReaderWordState,
     closeWordPanel,
     resolveExistingEntry,
@@ -776,7 +898,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   ]);
 
   const ignoreWord = useCallback(async () => {
-    const rollbackReaderState = applyReaderWordState(wordPanel.word, 'ignored');
+    const rollbackReaderState = applyReaderWordState(vocabWord.text, 'ignored');
     let existing: VocabEntry | undefined;
     try {
       existing = await resolveExistingEntry();
@@ -790,10 +912,11 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     if (!existing) {
       const entry: VocabEntry = {
         id: uuidv4(),
-        text: foldWord(wordPanel.word, activeLang),
+        text: vocabWord.text,
+        sentenceWord: vocabWord.sentenceWord,
         type: 'word',
         sentence: wordPanel.sentence,
-        translation: wordPanel.translation || '',
+        translation: vocabWord.translation || '',
         state: 'ignored',
         stateUpdatedAt: new Date(),
         reviewCount: 0,
@@ -820,8 +943,8 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     closeWordPanel();
   }, [
     wordPanel,
+    vocabWord,
     lessonId,
-    activeLang,
     applyReaderWordState,
     closeWordPanel,
     resolveExistingEntry,
@@ -833,7 +956,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
       if (!wordPanel.translation) return;
 
       const state = `level${level}` as 'level1' | 'level2' | 'level3' | 'level4';
-      const rollbackReaderState = applyReaderWordState(wordPanel.word, state);
+      const rollbackReaderState = applyReaderWordState(vocabWord.text, state);
       let existing: VocabEntry | undefined;
       try {
         existing = await resolveExistingEntry();
@@ -847,10 +970,11 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
       if (!existing) {
         const entry: VocabEntry = {
           id: uuidv4(),
-          text: foldWord(wordPanel.word, activeLang),
+          text: vocabWord.text,
+          sentenceWord: vocabWord.sentenceWord,
           type: wordPanel.word.includes(' ') ? 'phrase' : 'word',
           sentence: wordPanel.sentence,
-          translation: wordPanel.translation,
+          translation: vocabWord.translation || '',
           state,
           stateUpdatedAt: new Date(),
           reviewCount: 0,
@@ -898,8 +1022,8 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     },
     [
       wordPanel,
+      vocabWord,
       lessonId,
-      activeLang,
       applyReaderWordState,
       onboarding,
       onboardingActive,
@@ -943,10 +1067,11 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     const isPhrase = wordPanel.word.includes(' ');
     const entry: VocabEntry = {
       id: uuidv4(),
-      text: foldWord(wordPanel.word, activeLang),
+      text: vocabWord.text,
+      sentenceWord: vocabWord.sentenceWord,
       type: isPhrase ? 'phrase' : 'word',
       sentence: wordPanel.sentence,
-      translation: wordPanel.translation || '',
+      translation: vocabWord.translation || '',
       state: 'level1',
       stateUpdatedAt: new Date(),
       reviewCount: 0,
@@ -954,7 +1079,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
       createdAt: new Date(),
       pushedToAnki: false,
     };
-    const rollbackReaderState = applyReaderWordState(wordPanel.word, entry.state);
+    const rollbackReaderState = applyReaderWordState(vocabWord.text, entry.state);
     if (!(await saveVocab(entry))) {
       rollbackReaderState();
       throw new Error('Could not save the word — check your connection.');
@@ -966,8 +1091,8 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     return entry;
   }, [
     wordPanel,
+    vocabWord,
     lessonId,
-    activeLang,
     applyReaderWordState,
     resolveExistingEntry,
     persistAcceptedTranslation,
@@ -999,7 +1124,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
         {
           id: entry.id,
           cardType: 'word',
-          word: wordPanel.word,
+          word: vocabWord.sentenceWord ? vocabWord.text : wordPanel.word,
           translation,
           meaning: wordMeaning,
           ...(source
@@ -1019,7 +1144,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
 
     const noteId = await addWordCard(
       deckName,
-      wordPanel.word,
+      vocabWord.sentenceWord ? vocabWord.text : wordPanel.word,
       translation,
       wordMeaning,
       source ? buildSourceLinkHtml(source) : undefined,
@@ -1031,7 +1156,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
         ? { ...prev.existingEntry, pushedToAnki: true, ankiNoteId: noteId }
         : { ...entry, pushedToAnki: true, ankiNoteId: noteId },
     }));
-  }, [wordPanel, getAnkiDecks, ensureVocabEntry, ankiTransport]);
+  }, [vocabWord, wordPanel, getAnkiDecks, ensureVocabEntry, ankiTransport]);
 
   const addClozeToAnki = useCallback(
     async (blankWord: string) => {
@@ -1330,7 +1455,10 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   );
 
   const markRemainingControl = (
-    <MarkRemainingKnown count={remainingWords.length} onConfirm={markRemainingKnown} />
+    <>
+      <MarkRemainingKnown count={remainingBases.length} onConfirm={markRemainingKnown} />
+      <MarkKnownUnknown count={knownInLesson.length} onConfirm={markKnownUnknown} />
+    </>
   );
 
   return (
@@ -1341,7 +1469,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
             lesson={lesson}
             segments={segments}
             audioUrl={lessonAudioUrl(lesson.id)}
-            knownWordsMap={readerWordStates}
+            knownWordsMap={displayedWordStates}
             wordPanelOpen={wordPanel.isOpen}
             onWordClick={handleWordClick}
             onExit={() => setListenMode(false)}
@@ -1355,7 +1483,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
             onClose={handleClose}
             onSaveText={handleSaveText}
             onEditingChange={handleEditingChange}
-            knownWordsMap={readerWordStates}
+            knownWordsMap={displayedWordStates}
             prevLesson={prevLesson}
             nextLesson={nextLesson}
             headerAction={
@@ -1386,6 +1514,9 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
           // explicitly. A spread silently dropped these (all props optional, so tsc
           // stayed green) and the drawer rendered "No definition found" for every word.
           entry={displayEntry}
+          saveOptions={saveOptions}
+          saveTarget={vocabWord.text}
+          onChooseSaveTarget={chooseBaseWord}
           aiTranslation={wordPanel.translation}
           aiPartOfSpeech={wordPanel.partOfSpeech}
           aiContextTranslation={wordPanel.aiContextTranslation}
@@ -1398,7 +1529,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
           isEnriching={wordPanel.isEnriching}
           error={wordPanel.error}
           existingEntry={wordPanel.existingEntry}
-          wordState={readerWordStates.get(foldWord(wordPanel.word, activeLang))}
+          wordState={displayedWordStates.get(foldWord(wordPanel.word, activeLang))}
           onboardingSaveProgress={
             onboardingActive && !wordPanel.word.includes(' ')
               ? {

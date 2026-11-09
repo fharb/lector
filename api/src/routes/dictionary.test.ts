@@ -153,3 +153,47 @@ describe('dictionary accepted cache routes', () => {
     ).toEqual({ n: 0 });
   });
 });
+
+describe('POST /base-words', () => {
+  const post = (body: unknown) =>
+    request('alice', '/base-words', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  test('answers nothing for a language without word forms', async () => {
+    const response = await post({ words: ['huise'], language: 'af' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ baseWords: {} });
+  });
+
+  test('rejects a list that is not strings', async () => {
+    expect((await post({ words: [1], language: 'af' })).status).toBe(400);
+    expect((await post({ words: 'huise', language: 'af' })).status).toBe(400);
+  });
+
+  test('rejects a list that is too long', async () => {
+    const words = Array.from({ length: 50_001 }, () => 'a');
+    expect((await post({ words, language: 'af' })).status).toBe(400);
+  });
+});
+
+describe('POST /meanings', () => {
+  const post = (body: unknown) =>
+    request('alice', '/meanings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  test('rejects a list that is not strings', async () => {
+    expect((await post({ words: [1], language: 'af' })).status).toBe(400);
+  });
+
+  test('answers an empty object when there are no words', async () => {
+    const response = await post({ words: [], language: 'af' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ meanings: {} });
+  });
+});

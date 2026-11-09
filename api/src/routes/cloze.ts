@@ -445,10 +445,12 @@ app.post('/onboarding', async (c) => {
   const language = body.language;
   const vocab = db
     .prepare(
-      `SELECT text, type, state FROM vocab
+      `SELECT text, type, state, sentenceWord FROM vocab
        WHERE userId = ? AND id = ? AND language = ?`,
     )
-    .get(userId, vocabId, language) as { text: string; type: string; state: string } | undefined;
+    .get(userId, vocabId, language) as
+    | { text: string; type: string; state: string; sentenceWord: string | null }
+    | undefined;
   if (!vocab) return c.json({ error: 'Vocabulary entry not found' }, 404);
   if (vocab.type !== 'word' || vocab.state === 'known' || vocab.state === 'ignored') {
     return c.json({ error: 'Onboarding practice requires a single learning word' }, 400);
@@ -458,7 +460,10 @@ app.post('/onboarding', async (c) => {
   }
 
   const wanted = punctuationInsensitiveToken(word, language);
-  if (!wanted || wanted !== punctuationInsensitiveToken(vocab.text, language)) {
+  if (
+    !wanted ||
+    wanted !== punctuationInsensitiveToken(vocab.sentenceWord ?? vocab.text, language)
+  ) {
     return c.json({ error: 'word does not match the vocabulary entry' }, 400);
   }
   const tokens = sentence.split(/\s+/u);

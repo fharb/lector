@@ -274,6 +274,16 @@ export interface MorphologyConfig {
   prefixesFirst?: boolean;
 }
 
+/** How the reader finds the base word of an inflected form in `inflections`. */
+export interface WordFormsConfig {
+  /** A row with one of these tags is an inflection. Other rows link separate words. */
+  inflectionTags: readonly string[];
+  /** A lemma reached through a row with one of these tags is followed one step further. */
+  secondStepTags: readonly string[];
+  /** A letter that running text often replaces, and its replacement. */
+  plainSpelling?: readonly [string, string];
+}
+
 export interface LanguageConfig {
   /** English name, e.g. "German". */
   name: string;
@@ -301,4 +311,6 @@ export interface LanguageConfig {
   script: ScriptConfig;
   /** How the lookup reaches a key when the written form is not one (ko). */
   morphology?: MorphologyConfig;
+  /** Set to let an inflected form take the state of its base word in the reader. */
+  wordForms?: WordFormsConfig;
 }

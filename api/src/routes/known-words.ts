@@ -104,4 +104,51 @@ app.post('/', async (c) => {
   return c.json({ success: true, count: body.updates.length });
 });
 
+// POST /api/known-words/remove - forget words; one with a saved entry keeps it, as new
+app.post('/remove', async (c) => {
+  const userId = getCurrentUserId(c);
+  const body = await c.req.json().catch(() => null);
+  if (!Array.isArray(body?.words) || !body.words.every((w: unknown) => typeof w === 'string')) {
+    return c.json({ error: 'words array required' }, 400);
+  }
+  const languageError = validateOptionalLanguage(body.language);
+  if (languageError) return c.json({ error: languageError }, 400);
+
+  const lang = resolveLanguage(body.language, userId);
+  const pack = getLanguageConfig(lang);
+  const remove = db.prepare(
+    'DELETE FROM knownWords WHERE userId = ? AND word = ? AND language = ?',
+  );
+  const setKnownRowNew = db.prepare(
+    `INSERT INTO knownWords (userId, word, language, state) VALUES (?, ?, ?, 'new')
+     ON CONFLICT(userId, word, language) DO UPDATE SET state = 'new'`,
+  );
+  const setVocabNew = db.prepare(
+    "UPDATE vocab SET state = 'new', stateUpdatedAt = ? WHERE userId = ? AND id = ?",
+  );
+  const vocabIds = new Map<string, string[]>();
+  const vocabRows = db
+    .prepare('SELECT id, text FROM vocab WHERE userId = ? AND language = ?')
+    .all(userId, lang) as Array<{ id: string; text: string }>;
+  for (const row of vocabRows) {
+    const key = foldWord(row.text, pack);
+    vocabIds.set(key, [...(vocabIds.get(key) ?? []), row.id]);
+  }
+  const now = new Date().toISOString();
+  const removeAll = db.transaction((words: string[]) => {
+    for (const word of words) {
+      const key = foldWord(word, pack);
+      const ids = vocabIds.get(key);
+      if (!ids) {
+        remove.run(userId, key, lang);
+        continue;
+      }
+      for (const id of ids) setVocabNew.run(now, userId, id);
+      setKnownRowNew.run(userId, key, lang);
+    }
+  });
+  removeAll(body.words);
+  return c.json({ success: true, count: body.words.length });
+});
+
 export default app;

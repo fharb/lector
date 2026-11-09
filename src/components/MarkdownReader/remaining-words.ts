@@ -3,6 +3,7 @@ import {
   foldWord,
   lookupByVocabKeys,
   tokenize,
+  vocabKeys,
   type LanguageConfig,
   type WordSegmentation,
 } from '@/lib/languages';
@@ -49,4 +50,34 @@ export function remainingWordKeys(
     const state = lookupByVocabKeys(states, key, pack);
     return state === undefined || state === 'new';
   });
+}
+
+/** One word per family: a form is replaced by the base word it would be saved under. */
+export function remainingBaseWords(keys: string[], baseForms: Map<string, string[]>): string[] {
+  return [...new Set(keys.map((key) => baseForms.get(key)?.[0] ?? key))];
+}
+
+/** The stored words that make a lesson's words known: their own entry, or else their base words. */
+export function knownStoredWords(
+  keys: string[],
+  states: Map<string, WordState>,
+  baseForms: Map<string, string[]>,
+  pack: LanguageConfig,
+): string[] {
+  const stored = new Set<string>();
+  for (const key of keys) {
+    const own = vocabKeys(key, pack).filter((candidate) => {
+      const state = states.get(candidate);
+      return state !== undefined && state !== 'new';
+    });
+    if (own.length > 0) {
+      own.filter((candidate) => states.get(candidate) === 'known').forEach((w) => stored.add(w));
+      continue;
+    }
+    baseForms
+      .get(key)
+      ?.filter((base) => states.get(base) === 'known')
+      .forEach((base) => stored.add(base));
+  }
+  return [...stored];
 }

@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import {
   bulkUpdateWordStates,
   getActivePack,
+  getBaseWords,
   getVocabByText,
   saveVocab,
   updateVocabEntry,
@@ -19,7 +20,8 @@ export default function KnownWordsImport() {
 
   // Import words as known
   const importKnownWords = async (words: string[]) => {
-    const updates = words.map((word) => ({
+    const bases = await getBaseWords(words);
+    const updates = [...new Set(words.map((word) => bases.get(word) ?? word))].map((word) => ({
       word,
       state: 'known' as WordState,
     }));
@@ -51,21 +53,27 @@ export default function KnownWordsImport() {
 
   // Import LingQ words with their states and translations
   const importLingQWords = async (imports: LingQImport[]) => {
+    const stateRank: Record<WordState, number> = {
+      new: 0,
+      level1: 1,
+      level2: 2,
+      level3: 3,
+      level4: 4,
+      known: 5,
+      ignored: -1,
+    };
+    const bases = await getBaseWords(
+      imports.filter((item) => item.type === 'word').map((item) => item.word),
+    );
+    const targetOf = (word: string) => bases.get(word) ?? word;
+
     for (const item of imports) {
+      const target = targetOf(item.word);
       // Check if word already exists
-      const existing = await getVocabByText(item.word);
+      const existing = await getVocabByText(target);
 
       if (existing) {
         // Update state if the LingQ state is "more known"
-        const stateRank: Record<WordState, number> = {
-          new: 0,
-          level1: 1,
-          level2: 2,
-          level3: 3,
-          level4: 4,
-          known: 5,
-          ignored: -1,
-        };
         const updates: Partial<Pick<VocabEntry, 'state' | 'translation' | 'sentence'>> = {};
         if (stateRank[item.state] > stateRank[existing.state]) updates.state = item.state;
         if (!existing.translation && item.translation) updates.translation = item.translation;
@@ -77,7 +85,8 @@ export default function KnownWordsImport() {
         // Create new entry
         await saveVocab({
           id: crypto.randomUUID(),
-          text: item.word,
+          text: target,
+          sentenceWord: target === item.word ? undefined : item.word,
           type: item.type,
           sentence: item.sentence,
           translation: item.translation,
@@ -91,8 +100,13 @@ export default function KnownWordsImport() {
     }
 
     // Also update known words table for fast lookup
-    const updates = imports.map((i) => ({ word: i.word, state: i.state }));
-    await bulkUpdateWordStates(updates);
+    const strongest = new Map<string, WordState>();
+    for (const item of imports) {
+      const target = targetOf(item.word);
+      const current = strongest.get(target);
+      if (!current || stateRank[item.state] > stateRank[current]) strongest.set(target, item.state);
+    }
+    await bulkUpdateWordStates([...strongest].map(([word, state]) => ({ word, state })));
   };
 
   // Handle CSV file upload for known words (supports LingQ format)

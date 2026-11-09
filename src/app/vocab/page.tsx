@@ -10,10 +10,13 @@ import {
   updateVocabEntry,
   updateVocabState,
   getAllVocab,
+  getKnownWordsMap,
+  removeKnownWords,
   getAllCollections,
   deleteVocabEntry,
   markVocabPushedToAnki,
   saveVocab,
+  getBaseWords,
   bulkDeleteVocabEntries,
 } from '@/lib/data-layer';
 import {
@@ -27,6 +30,7 @@ import {
 } from '@/lib/anki';
 import { queueForAnki } from '@/lib/anki-queue';
 import { useAnkiTransport } from '@/lib/anki-transport';
+import { setListEntriesState, withKnownOnlyEntries } from './known-only';
 import VocabStats from './components/VocabStats';
 import VocabDetailModal from './components/VocabDetailModal';
 import { toast } from 'sonner';
@@ -79,7 +83,12 @@ export default function VocabPage() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [vocabData, collectionsData] = await Promise.all([getAllVocab(), getAllCollections()]);
+      const [savedVocab, wordStates, collectionsData] = await Promise.all([
+        getAllVocab(),
+        getKnownWordsMap(),
+        getAllCollections(),
+      ]);
+      const vocabData = withKnownOnlyEntries(savedVocab, wordStates, activeLang);
       setEntries(vocabData);
       setCollections(collectionsData);
       // Derive the state breakdown from the list we already fetched — this was
@@ -136,6 +145,7 @@ export default function VocabPage() {
 
   // Handle entry click to view/edit
   const handleEntryClick = (entry: VocabEntry) => {
+    if (entry.knownOnly) return;
     setSelectedEntry(entry);
   };
 
@@ -182,7 +192,14 @@ export default function VocabPage() {
   };
 
   const handleBulkDelete = async (vocabIDs: string[]) => {
-    const response = await bulkDeleteVocabEntries(vocabIDs);
+    const selected = entries.filter((entry) => vocabIDs.includes(entry.id));
+    const knownOnly = selected.filter((entry) => entry.knownOnly);
+    if (knownOnly.length > 0) await removeKnownWords(knownOnly.map((entry) => entry.text));
+    const savedIds = selected.filter((entry) => !entry.knownOnly).map((entry) => entry.id);
+    const response =
+      savedIds.length > 0
+        ? await bulkDeleteVocabEntries(savedIds)
+        : { success: true, message: `Removed ${knownOnly.length} words` };
     await loadData();
 
     toast[response.success ? 'success' : 'error'](response.message, {
@@ -196,7 +213,12 @@ export default function VocabPage() {
   // (ankiClozeDeck). The choice is made via the toggle in VocabList.
   const handleExportToAnki = useCallback(
     async (ids: string[], cardType: 'basic' | 'cloze') => {
-      const entriesToExport = entries.filter((e) => ids.includes(e.id) && !e.pushedToAnki);
+      const selectedForExport = entries.filter((e) => ids.includes(e.id));
+      if (selectedForExport.every((e) => e.knownOnly)) {
+        toast.error('These words have no sentence or translation to export.', { duration: 5000 });
+        return;
+      }
+      const entriesToExport = selectedForExport.filter((e) => !e.knownOnly && !e.pushedToAnki);
       if (entriesToExport.length === 0) {
         toast.error('All selected entries have already been synced to Anki.', {
           duration: 5000,
@@ -255,7 +277,7 @@ export default function VocabPage() {
           const noteId = await addCard(
             targetDeck,
             entry.sentence,
-            entry.text,
+            cardType === 'cloze' ? (entry.sentenceWord ?? entry.text) : entry.text,
             entry.translation, // doubles as the word meaning for now
           );
           await markVocabPushedToAnki(entry.id, noteId);
@@ -285,22 +307,25 @@ export default function VocabPage() {
   );
 
   // Mark selected entries as known
-  const handleMarkAsKnown = useCallback(async (ids: string[]) => {
+  const handleSetState = async (ids: string[], state: WordState) => {
     try {
-      for (const id of ids) {
-        await updateVocabState(id, 'known');
-      }
+      await setListEntriesState(
+        entries.filter((entry) => ids.includes(entry.id)),
+        state,
+      );
       await loadData();
-      toast.success(`Marked ${ids.length} entries as known`, {
+      toast.success(`Updated ${ids.length} ${ids.length === 1 ? 'word' : 'words'}`, {
         duration: 5000,
       });
     } catch (error) {
-      console.error('Failed to mark as known:', error);
-      toast.error('Failed to mark entries as known', {
+      console.error('Failed to update word state:', error);
+      toast.error('Failed to update the words', {
         duration: 5000,
       });
     }
-  }, []);
+  };
+
+  const handleMarkAsKnown = (ids: string[]) => handleSetState(ids, 'known');
 
   // Pull Anki card states, upgrade matching vocab entries, and create new
   // entries for Anki words that have never been saved to lector.
@@ -331,10 +356,16 @@ export default function VocabPage() {
       // Create vocab entries for Anki words not yet in lector.
       const now = new Date();
       const newWords = findNewAnkiWords(entries, ankiStates);
+      const bases = await getBaseWords(newWords.map((word) => word.text));
+      const saved = new Set(entries.map((entry) => entry.text));
       for (const { text, state, sentence, translation } of newWords) {
+        const target = bases.get(text) ?? text;
+        if (saved.has(target)) continue;
+        saved.add(target);
         await saveVocab({
           id: crypto.randomUUID(),
-          text,
+          text: target,
+          sentenceWord: target === text ? undefined : text,
           type: 'word',
           sentence,
           translation,
@@ -424,6 +455,7 @@ export default function VocabPage() {
         onEntryClick={handleEntryClick}
         onExportToAnki={handleExportToAnki}
         onMarkAsKnown={handleMarkAsKnown}
+        onSetState={handleSetState}
         onBulkDelete={handleBulkDelete}
         // Pull-sync is the browser→AnkiConnect path; on the addon transport
         // review state pushes itself, so the button would be a dead end.

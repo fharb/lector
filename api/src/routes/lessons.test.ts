@@ -162,6 +162,26 @@ describe('GET /:id/readings (#289 4.4)', () => {
   });
 });
 
+describe('GET /:id/base-forms', () => {
+  beforeEach(reset);
+  afterEach(reset);
+
+  test('returns nothing for a language that does not recognize word forms', async () => {
+    seedLesson();
+
+    const response = await app.request('/lesson-1/base-forms?language=af');
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({});
+  });
+
+  test('404 for an unknown lesson', async () => {
+    const response = await app.request('/missing/base-forms?language=af');
+
+    expect(response.status).toBe(404);
+  });
+});
+
 describe('audio lesson routes (#185)', () => {
   beforeEach(() => {
     reset();

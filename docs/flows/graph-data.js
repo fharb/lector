@@ -690,7 +690,9 @@
   N("route:lessons-segments", "route", "GET /api/lessons/:id/segments", { path: "api/src/routes/lessons.ts" });
   N("route:lessons-audio", "route", "GET /api/lessons/:id/audio", { path: "api/src/routes/lessons.ts" });
   N("route:known-words-get", "route", "GET /api/known-words", { path: "api/src/routes/known-words.ts" });
+  N("route:lessons-base-forms", "route", "GET /api/lessons/:id/base-forms", { path: "api/src/routes/lessons.ts" });
   N("route:known-words-post", "route", "POST /api/known-words", { path: "api/src/routes/known-words.ts" });
+  N("route:known-words-remove", "route", "POST /api/known-words/remove", { path: "api/src/routes/known-words.ts" });
   N("route:import-epub", "route", "POST /api/import/epub", { path: "api/src/routes/import.ts" });
   N("route:import-audio", "route", "POST /api/import/audio", { path: "api/src/routes/import.ts" });
   N("route:extract-url", "route", "POST /api/extract-url", { path: "api/src/routes/extract-url.ts" });
@@ -897,11 +899,14 @@
   edge("fn:getLesson", "file:data-layer", "in");
   edge("fn:getLesson", "route:lessons-get", "http");
   edge("route:lessons-get", "file:route-lessons", "in");
+  edge("route:lessons-base-forms", "file:route-lessons", "in");
   edge("route:lessons-get", "table:lessons", "reads");
   edge("route:lessons-get", "fn:resolveLanguage", "calls");
   edge("fn:getKnownWordsMap", "file:data-layer", "in");
   edge("fn:getKnownWordsMap", "route:known-words-get", "http");
   edge("route:known-words-get", "file:route-known-words", "in");
+  edge("route:known-words-remove", "file:route-known-words", "in");
+  edge("route:known-words-remove", "table:knownWords", "writes");
   edge("route:known-words-get", "table:knownWords", "reads");
   edge("route:known-words-post", "file:route-known-words", "in");
   edge("fn:read-loadLesson", "file:markdown-reader", "opens");

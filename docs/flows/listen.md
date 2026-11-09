@@ -85,11 +85,11 @@ Tests: `e2e/audio-import.spec.ts`.
 | Reader | `src/components/MarkdownReader/index.tsx` | youtube branch |
 | Player | `src/components/YouTubePlayer/index.tsx` | `seekTo`, `onTimeUpdate` |
 | Position | `src/components/YouTubePlayer/iframe-api.ts` | `loadYouTubeIframeApi` |
-| Sync | `src/components/MarkdownReader/transcript-sync.ts` | `transcriptSegmentAt`, `stickyCenteredScrollTop` |
+| Sync | `src/components/MarkdownReader/transcript-sync.ts` | `transcriptSegmentAt`, `belowStickyScrollTop` |
 | Cues | `src/components/MarkdownReader/TranscriptReader.tsx` | `onSeek`, `onWordClick` |
 
 Cues live on `lessons.segments` JSON, not `transcript_segments`. Listen-along does not mount.
 
-The player reports its position four times a second. The reader highlights the matching cue and scrolls it into the area below the sticky video. A jump in the video moves the text. The text does not scroll while the translation drawer is open. The `Follow video` control turns this off. The browser stores the choice under `SETTINGS_KEYS.FOLLOW_VIDEO`. On a wider screen, the `Video size` control switches between normal and large. A large player stops growing at 60% of the window height. It is never smaller than the normal player. The browser stores that choice under `SETTINGS_KEYS.PLAYER_SIZE`. If YouTube's `iframe_api` script is blocked, the text does not follow the video, but timestamps still seek.
+The player reports its position four times a second. The reader highlights the matching cue and scrolls it to two lines below the sticky video. A jump in the video moves the text. The text does not scroll while the translation drawer is open. The `Follow video` control turns this off. The browser stores the choice under `SETTINGS_KEYS.FOLLOW_VIDEO`. On a wider screen, the `Video size` control switches between normal and large. A large player stops growing at 60% of the window height. It is never smaller than the normal player. The browser stores that choice under `SETTINGS_KEYS.PLAYER_SIZE`. If YouTube's `iframe_api` script is blocked, the text does not follow the video, but timestamps still seek.
 
 Tests: `e2e/youtube-transcript.spec.ts`.
