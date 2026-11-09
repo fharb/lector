@@ -6,7 +6,10 @@ import type { AudioTranscriptSegment } from '@/types';
  * depends on text offsets, so transcript edits can't break it. -1 before the
  * first segment.
  */
-export function activeSegmentIndex(segments: AudioTranscriptSegment[], ms: number): number {
+export function activeSegmentIndex<T extends Pick<AudioTranscriptSegment, 'startMs'>>(
+  segments: T[],
+  ms: number,
+): number {
   let low = 0;
   let high = segments.length - 1;
   let answer = -1;

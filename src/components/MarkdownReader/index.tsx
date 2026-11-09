@@ -6,6 +6,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Languages, SquarePen } from 'luci
 import { getLessonReadings, updateLessonProgress } from '@/lib/data-layer';
 import { createTrailingThrottle } from './throttle';
 import { snapToWordBoundaries } from './utils';
+import { stickyCenteredScrollTop, transcriptSegmentAt } from './transcript-sync';
 import {
   foldWord,
   getLanguageConfig,
@@ -26,6 +27,9 @@ import { SETTINGS_KEYS } from '@/app/settings/constants';
 import TranscriptReader from './TranscriptReader';
 import YouTubePlayer, { type SeekTarget } from '@/components/YouTubePlayer';
 import type { TranscriptSegment, YouTubeSourceMeta } from '@/types';
+
+// The player keeps reporting the old position until a seek lands.
+const SEEK_SETTLE_MS = 1000;
 
 export default function MarkdownReader({
   lesson,
@@ -99,12 +103,69 @@ export default function MarkdownReader({
 
   const [seekTarget, setSeekTarget] = useState<SeekTarget | null>(null);
   const [activeSegmentIndex, setActiveSegmentIndex] = useState<number | null>(null);
+  const [followVideo, setFollowVideo] = useState(true);
+  const [largePlayer, setLargePlayer] = useState(false);
   const seekNonce = useRef(0);
+  const ignoreVideoTimeUntil = useRef(0);
+  const stickyPlayerRef = useRef<HTMLDivElement>(null);
+  const wordPanelOpenRef = useRef(wordPanelOpen);
+  useEffect(() => {
+    wordPanelOpenRef.current = wordPanelOpen;
+  }, [wordPanelOpen]);
+
   const handleSeek = useCallback((seconds: number, segmentIndex: number) => {
     seekNonce.current += 1;
+    ignoreVideoTimeUntil.current = Date.now() + SEEK_SETTLE_MS;
     setSeekTarget({ seconds, nonce: seekNonce.current });
     setActiveSegmentIndex(segmentIndex);
   }, []);
+
+  const handleVideoTime = useCallback(
+    (seconds: number) => {
+      if (!transcript || Date.now() < ignoreVideoTimeUntil.current) return;
+      setActiveSegmentIndex(transcriptSegmentAt(transcript.segments, seconds));
+    },
+    [transcript],
+  );
+
+  useEffect(() => {
+    if (localStorage.getItem(SETTINGS_KEYS.FOLLOW_VIDEO) === 'false') setFollowVideo(false);
+    if (localStorage.getItem(SETTINGS_KEYS.PLAYER_SIZE) === 'large') setLargePlayer(true);
+  }, []);
+
+  const togglePlayerSize = useCallback(() => {
+    const next = !largePlayer;
+    localStorage.setItem(SETTINGS_KEYS.PLAYER_SIZE, next ? 'large' : 'normal');
+    setLargePlayer(next);
+  }, [largePlayer]);
+
+  const toggleFollowVideo = useCallback(() => {
+    const next = !followVideo;
+    localStorage.setItem(SETTINGS_KEYS.FOLLOW_VIDEO, String(next));
+    setFollowVideo(next);
+    if (!next) setActiveSegmentIndex(null);
+  }, [followVideo]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!followVideo || activeSegmentIndex === null || !container || wordPanelOpenRef.current) {
+      return;
+    }
+    const row = container.querySelector<HTMLElement>(
+      `[data-segment-index="${activeSegmentIndex}"]`,
+    );
+    if (!row) return;
+    const top = stickyCenteredScrollTop({
+      rowTop:
+        row.getBoundingClientRect().top -
+        container.getBoundingClientRect().top +
+        container.scrollTop,
+      rowHeight: row.offsetHeight,
+      containerHeight: container.clientHeight,
+      stickyHeight: stickyPlayerRef.current?.offsetHeight ?? 0,
+    });
+    container.scrollTo({ top, behavior: 'smooth' });
+  }, [activeSegmentIndex, followVideo]);
 
   // Editing rewrites the flattened text, which would desync the timestamped
   // segments — so transcript correction is disabled for MVP (#334 follow-up).
@@ -438,19 +499,56 @@ export default function MarkdownReader({
           </div>
         ) : transcript ? (
           <>
-            <div className="sticky top-0 z-10 mx-auto max-w-[46em] bg-card px-4 pt-4 pb-2 sm:px-8">
-              <YouTubePlayer videoId={transcript.meta.videoId} seekTarget={seekTarget} />
-              <a
-                href={transcript.meta.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-2 block text-xs text-muted-foreground hover:text-foreground hover:underline"
+            <div
+              ref={stickyPlayerRef}
+              className={`sticky top-0 z-10 mx-auto bg-card px-4 pt-4 pb-2 sm:px-8 ${
+                largePlayer ? 'max-w-[46em] sm:max-w-[72em]' : 'max-w-[46em]'
+              }`}
+            >
+              <div
+                className={
+                  largePlayer ? 'mx-auto w-full sm:max-w-[max(42em,calc(60dvh*16/9))]' : ''
+                }
               >
-                {transcript.meta.captionKind === 'asr'
-                  ? 'Auto-generated captions'
-                  : 'Creator captions'}
-                {transcript.meta.channel ? ` · ${transcript.meta.channel}` : ''} · Open on YouTube
-              </a>
+                <YouTubePlayer
+                  videoId={transcript.meta.videoId}
+                  seekTarget={seekTarget}
+                  onTimeUpdate={followVideo ? handleVideoTime : undefined}
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <a
+                  href={transcript.meta.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="min-w-0 text-xs text-muted-foreground hover:text-foreground hover:underline"
+                >
+                  {transcript.meta.captionKind === 'asr'
+                    ? 'Auto-generated captions'
+                    : 'Creator captions'}
+                  {transcript.meta.channel ? ` · ${transcript.meta.channel}` : ''} · Open on YouTube
+                </a>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={togglePlayerSize}
+                    data-testid="transcript-player-size-toggle"
+                    className="hidden text-muted-foreground sm:inline-flex"
+                  >
+                    Video size: {largePlayer ? 'Large' : 'Normal'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={toggleFollowVideo}
+                    data-testid="transcript-follow-toggle"
+                    className="text-muted-foreground"
+                  >
+                    Follow video: {followVideo ? 'On' : 'Off'}
+                  </Button>
+                </div>
+              </div>
             </div>
             <TranscriptReader
               segments={transcript.segments}

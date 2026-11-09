@@ -318,7 +318,7 @@
   N("flow:youtube-captions", "flow", "YouTube captions", {
     domain: "listen",
     md: "listen.md#youtube-captions",
-    summary: "Cues on lessons.segments JSON. YouTube iframe seek. Import is the Library domain.",
+    summary: "Cues on lessons.segments JSON. YouTube iframe seek. The active cue follows the video. Import is the Library domain.",
     steps: ["file:youtube-player", "file:transcript-reader", "fn:read-handleWordClick"],
   });
   N("flow:anki-push", "flow", "Push to Anki", {

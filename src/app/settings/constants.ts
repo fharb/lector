@@ -8,6 +8,8 @@ export const SETTINGS_KEYS = {
   HIDE_TRANSLATION: 'lector-hide-translation',
   VOCAB_PAGE_SIZE: 'lector-vocab-page-size',
   ANNOTATION_MODE: 'lector-annotation-mode',
+  FOLLOW_VIDEO: 'lector-follow-video',
+  PLAYER_SIZE: 'lector-player-size',
   PROSE_STYLE: 'lector-prose-style',
   SIDEBAR_COLLAPSED: 'lector-sidebar-collapsed',
 } as const;
