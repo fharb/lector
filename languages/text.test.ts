@@ -9,6 +9,7 @@ import {
   hebrewLooseKey,
   latinLookupVariants,
   normalizeText,
+  withoutStress,
 } from './text';
 import { LANGUAGES } from './registry';
 import type { LanguageConfig } from './types';
@@ -71,6 +72,33 @@ describe('normalizeText', () => {
   it('is a no-op on already-NFC text', () => {
     const text = 'Die Häuser wurden sê môre gebaut.';
     expect(normalizeText(text)).toBe(text);
+  });
+});
+
+describe('withoutStress', () => {
+  const ru = LANGUAGES.ru;
+  const acute = '\u0301';
+  const grave = '\u0300';
+
+  it('folds a stressed Russian word onto the plain key', () => {
+    expect(foldWord(`чита${acute}ть`, ru)).toBe('читать');
+    expect(foldWord(`Москва${acute}`, ru)).toBe('москва');
+    expect(foldWord(`по${grave}лево${acute}й`, ru)).toBe('полевой');
+  });
+
+  it('keeps ё and й, which are letters and not stress', () => {
+    expect(foldWord(`ёжи${acute}к`, ru)).toBe('ёжик');
+    expect(foldWord(`мо${acute}й`, ru)).toBe('мой');
+    expect(withoutStress(`ёлка${acute}`, ru)).toBe('ёлка');
+  });
+
+  it('keeps the case of the display word', () => {
+    expect(withoutStress(`Москва${acute}`, ru)).toBe('Москва');
+  });
+
+  it('leaves other languages alone', () => {
+    expect(withoutStress(`cafe${acute}`, LANGUAGES.fr)).toBe(`cafe${acute}`);
+    expect(foldWord('Café', LANGUAGES.fr)).toBe('café');
   });
 });
 

@@ -2,7 +2,7 @@ import type { SQLQueryBindings } from 'bun:sqlite';
 import { Hono } from 'hono';
 import { db, VocabRow } from '../db';
 import { resolveLanguage } from '../lib/active-language';
-import { foldWord, getLanguageConfig, normalizeText } from '../lib/languages';
+import { foldWord, getLanguageConfig, normalizeText, withoutStress } from '../lib/languages';
 import { getCurrentUserId } from '../lib/user';
 import { randomUUID } from 'crypto';
 import { entitlements, planLimitResponse, type AtomicLimitCheck } from '../lib/entitlements';
@@ -139,7 +139,7 @@ app.post('/', async (c) => {
   const lang = resolveLanguage(body.language, userId);
   const pack = getLanguageConfig(lang);
   // Text ingress (#289): NFC the stored form; the knownWords key is folded.
-  const text = normalizeText(body.text);
+  const text = withoutStress(normalizeText(body.text), pack);
   const sentence = body.sentence ?? '';
   const translation = body.translation ?? '';
   const foldedText = foldWord(text, pack);

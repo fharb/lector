@@ -58,6 +58,31 @@ describe('GET /api/vocab?text= (#240)', () => {
     expect(all.length).toBe(1);
   });
 
+  test('POST stores a Russian word without stress marks', async () => {
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: 'stressed-word',
+        text: 'чита\u0301ть',
+        type: 'word',
+        sentence: 'Я люблю читать.',
+        translation: 'to read',
+        state: 'new',
+        stateUpdatedAt: TS,
+        reviewCount: 0,
+        createdAt: TS,
+        pushedToAnki: false,
+        language: 'ru',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(db.prepare("SELECT text FROM vocab WHERE id = 'stressed-word'").get()).toEqual({
+      text: 'читать',
+    });
+  });
+
   test('POST accepts the reader lesson reference and rejects a collection id', async () => {
     db.prepare(
       `INSERT INTO collections (id, title, author, language, createdAt, lastReadAt, userId)

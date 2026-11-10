@@ -205,7 +205,7 @@ Tests: `e2e/reader-phrase-selection.spec.ts`, `e2e/reader-phrase-touch.spec.ts`.
 | Button | `src/components/TranslationDrawer/components/NestedWordButton/index.tsx` | `NestedWordButton` |
 | Reader | `src/app/read/[bookId]/page.tsx` | `handleNestedLookup` |
 
-`handleNestedLookup` calls `handleWordClick(nestedWord, wordPanel.sentence)`. The call keeps the original sentence. A save after that still records the encounter.
+`handleNestedLookup` drops Russian stress marks from the word, then calls `handleWordClick(nestedWord, wordPanel.sentence)`. The call keeps the original sentence. A save after that still records the encounter.
 
 Tests: `e2e/nested-definitions.spec.ts`.
 

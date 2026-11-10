@@ -51,6 +51,7 @@ import {
   getLanguageConfig,
   isValidLanguageCode,
   makeWordSegmentation,
+  withoutStress,
 } from '@/lib/languages';
 import { toast } from 'sonner';
 import { Headphones, LoaderCircle } from 'lucide-react';
@@ -632,9 +633,9 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   // on the underlying word records where it was encountered.
   const handleNestedLookup = useCallback(
     (nestedWord: string) => {
-      void handleWordClick(nestedWord, wordPanel.sentence);
+      void handleWordClick(withoutStress(nestedWord, activeLang), wordPanel.sentence);
     },
-    [handleWordClick, wordPanel.sentence],
+    [activeLang, handleWordClick, wordPanel.sentence],
   );
 
   const requestContextTranslation = useCallback(async () => {

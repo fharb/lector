@@ -136,6 +136,42 @@ test.describe('Recognizing word forms', () => {
     await expect(page.getByTestId('stressed-vowel')).toHaveText('а́', { timeout: 10000 });
   });
 
+  test('saves a word opened from a dictionary result without stress marks', async ({ page }) => {
+    await switchToRussian(page);
+    const form = word('читала');
+    const base = word('читать');
+    const stressed = `${base.slice(0, 4)}\u0301${base.slice(4)}`;
+    const lessonId = await createLesson(page, 'ru', form);
+    await page.route('**/api/dictionary/lookup*', (route) =>
+      route.fulfill({
+        json: {
+          entry: {
+            word: form,
+            senses: [{ partOfSpeech: 'verb', gloss: `feminine past of ${stressed}` }],
+            source: 'dict',
+          },
+        },
+      }),
+    );
+
+    await page.goto(`/read/${lessonId}`);
+    await lookup(page, form).click();
+    await page.getByTestId('nested-word-link').click();
+    await expect(page.getByTestId('translation-drawer')).toContainText(base, { timeout: 10000 });
+    await page.getByTestId('word-level-1').click();
+
+    await expect(async () => {
+      const saved = await page.request.get(
+        apiUrl(`/api/vocab?language=ru&text=${encodeURIComponent(base)}`),
+      );
+      expect((await saved.json())[0]).toMatchObject({ text: base });
+    }).toPass({ timeout: 10000 });
+    const savedStressed = await page.request.get(
+      apiUrl(`/api/vocab?language=ru&text=${encodeURIComponent(stressed)}`),
+    );
+    expect(await savedStressed.json()).toEqual([]);
+  });
+
   test('saves the base form and colours the tapped form', async ({ page }) => {
     await switchToRussian(page);
     const base = word('читать');

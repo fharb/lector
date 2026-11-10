@@ -47,7 +47,16 @@ export function foldWord(text: string, pack: LanguageConfig): string {
   if (pack.code === 'ar') return foldArabicKey(cased);
   if (pack.code === 'hbo') return foldHebrewKey(cased);
   if (pack.code === 'he') return foldModernHebrewKey(cased);
-  return cased;
+  return withoutStress(cased, pack);
+}
+
+// Must match stripFromKeys for ru in scripts/build-dictionary.ts.
+const RUSSIAN_STRESS_MARKS = /[\u0300\u0301]/g;
+
+/** Drops the stress marks dictionaries print on Russian words. Other packs are unchanged. */
+export function withoutStress(text: string, pack: LanguageConfig): string {
+  if (pack.code !== 'ru') return text;
+  return text.normalize('NFD').replace(RUSSIAN_STRESS_MARKS, '').normalize('NFC');
 }
 
 const LATIN_MACRON_BREVE = /[\u0304\u0306]/g;
