@@ -259,7 +259,7 @@ test.describe('YouTube transcript follows the video', () => {
     await expect(page.locator('[data-active-segment]')).toHaveCount(0);
   });
 
-  test('does not scroll while the translation drawer is open', async ({ page }) => {
+  test('keeps following while the translation drawer is open', async ({ page }) => {
     const lessonId = await importLesson(page);
     await useLongTranscript(page, lessonId);
     await page.route('**/api/translate/gloss', (route) =>
@@ -276,9 +276,41 @@ test.describe('YouTube transcript follows the video', () => {
       'data-active-segment',
       'true',
     );
-    await page.waitForTimeout(600);
+    await expect.poll(() => scrollTop(page)).toBeGreaterThan(before);
+  });
 
-    expect(await scrollTop(page)).toBe(before);
+  test('flows short cues together on one line', async ({ page }) => {
+    await openWithFakePlayer(page, await importLesson(page));
+    const segments = page.getByTestId('transcript-segment');
+    const first = await segments.nth(0).boundingBox();
+    const second = await segments.nth(1).boundingBox();
+
+    expect(Math.abs((first?.y ?? 0) - (second?.y ?? 100))).toBeLessThan(8);
+  });
+
+  test('jumps back to the current line at the next line after a manual scroll', async ({
+    page,
+  }) => {
+    const lessonId = await importLesson(page);
+    await useLongTranscript(page, lessonId);
+    await openWithFakePlayer(page, lessonId);
+
+    await setVideoTime(page, 100);
+    const row = page.getByTestId('transcript-segment').nth(51);
+    await page.getByTestId('transcript-reader').evaluate((el) => {
+      if (el.parentElement) el.parentElement.scrollTop = 0;
+    });
+
+    await setVideoTime(page, 102);
+    await expect(row).toHaveAttribute('data-active-segment', 'true');
+    await expect
+      .poll(async () => {
+        const rowBox = await row.boundingBox();
+        const playerBox = await page.getByTestId('yt-player').boundingBox();
+        if (!rowBox || !playerBox) return false;
+        return rowBox.y >= playerBox.y + playerBox.height && rowBox.y + rowBox.height <= 900;
+      })
+      .toBe(true);
   });
 
   test('timestamps still seek when the YouTube script is blocked', async ({ page }) => {

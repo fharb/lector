@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TranscriptSegment } from '@/types';
-import { belowStickyScrollTop, transcriptSegmentAt } from './transcript-sync';
+import { belowStickyScrollTop, paragraphEndIndexes, transcriptSegmentAt } from './transcript-sync';
 
 const SEGMENTS: TranscriptSegment[] = [
   { start: 1, end: 3, text: 'een' },
@@ -35,5 +35,27 @@ describe('belowStickyScrollTop', () => {
 
   it('never scrolls above the top', () => {
     expect(belowStickyScrollTop({ rowTop: 420, stickyHeight: 400, gap: 56 })).toBe(0);
+  });
+});
+
+describe('paragraphEndIndexes', () => {
+  const cue = (text: string) => ({ text });
+  const long = 'a'.repeat(160);
+
+  it('ends a paragraph at a sentence once it is long enough', () => {
+    expect(paragraphEndIndexes([cue(long), cue(`${long}.`), cue('b')])).toEqual(new Set([1]));
+  });
+
+  it('does not end a short paragraph at a sentence', () => {
+    expect(paragraphEndIndexes([cue('Hallo.'), cue('Wereld.')])).toEqual(new Set());
+  });
+
+  it('ends a long paragraph even with no punctuation', () => {
+    const cues = Array.from({ length: 4 }, () => cue(long));
+    expect(paragraphEndIndexes(cues)).toEqual(new Set([3]));
+  });
+
+  it('returns nothing for no cues', () => {
+    expect(paragraphEndIndexes([])).toEqual(new Set());
   });
 });

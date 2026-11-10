@@ -1,7 +1,7 @@
 'use client';
 
-import { memo } from 'react';
-import { Play } from 'lucide-react';
+import { paragraphEndIndexes } from './transcript-sync';
+import { Fragment, memo } from 'react';
 import type { LanguageConfig, WordSegmentation } from '@/lib/languages';
 import { foldWord, lookupByVocabKeys } from '@/lib/languages';
 import type { TranscriptSegment, WordState } from '@/types';
@@ -76,6 +76,7 @@ function TranscriptReader({
   // Whether the reading sits out of flow above the word, or in the line box
   // where ruby layout widens the word to fit it. See `annotationOverhang`.
   const overhangs = pack.pronunciation.annotationOverhang;
+  const paragraphEnds = paragraphEndIndexes(segments);
   return (
     <div
       // See the note on the reader article: the glyph shapes follow the
@@ -103,71 +104,72 @@ function TranscriptReader({
 
         let wordIndex = -1;
         return (
-          <div
-            key={segmentIndex}
-            data-testid="transcript-segment"
-            data-segment-index={segmentIndex}
-            data-active-segment={activeSegmentIndex === segmentIndex || undefined}
-            className={`group flex gap-3 rounded-lg px-2 py-1.5 transition-colors sm:gap-4 ${
-              activeSegmentIndex === segmentIndex
-                ? 'bg-[color-mix(in_srgb,var(--clay)_12%,transparent)]'
-                : ''
-            }`}
-          >
-            <button
-              type="button"
-              data-testid="transcript-timestamp"
-              onClick={() => onSeek(segment.start, segmentIndex)}
-              title="Play from here"
-              aria-label={`Play from ${formatTimestamp(segment.start)}`}
-              className="mt-1 flex h-fit shrink-0 items-center gap-1 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground tabular-nums transition-colors hover:bg-accent hover:text-foreground"
+          <Fragment key={segmentIndex}>
+            <div
+              data-testid="transcript-segment"
+              data-segment-index={segmentIndex}
+              data-active-segment={activeSegmentIndex === segmentIndex || undefined}
+              className={`inline rounded box-decoration-clone transition-colors ${
+                activeSegmentIndex === segmentIndex
+                  ? 'bg-[color-mix(in_srgb,var(--clay)_18%,transparent)]'
+                  : ''
+              }`}
             >
-              <Play className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
-              {formatTimestamp(segment.start)}
-            </button>
-            {/* <p> so the reader's drag-select phrase lookup (closest('p')) works. */}
-            <p
-              className="flex-1"
-              style={{
-                lineHeight:
-                  annotationMode !== 'off' && readings !== null
-                    ? 'var(--reader-line-height-annotated)'
-                    : 'var(--reader-line-height)',
-              }}
-            >
-              {splitWords(segment.text, pack, segmentation).map((part, partIndex) => {
-                if (!part.isWord) {
+              <button
+                type="button"
+                data-testid="transcript-timestamp"
+                onClick={() => onSeek(segment.start, segmentIndex)}
+                title="Play from here"
+                aria-label={`Play from ${formatTimestamp(segment.start)}`}
+                className="mr-1 inline rounded px-0.5 align-baseline font-mono text-[0.6em] text-muted-foreground/70 tabular-nums transition-colors hover:bg-accent hover:text-foreground"
+              >
+                {formatTimestamp(segment.start)}
+              </button>
+              {/* <p> so the reader's drag-select phrase lookup (closest('p')) works. */}
+              <p
+                className="inline"
+                style={{
+                  lineHeight:
+                    annotationMode !== 'off' && readings !== null
+                      ? 'var(--reader-line-height-annotated)'
+                      : 'var(--reader-line-height)',
+                }}
+              >
+                {splitWords(segment.text, pack, segmentation).map((part, partIndex) => {
+                  if (!part.isWord) {
+                    return (
+                      <span key={partIndex} data-leaf="">
+                        {part.text}
+                      </span>
+                    );
+                  }
+                  wordIndex += 1;
+                  const thisIndex = wordIndex;
+                  const key = foldWord(part.text, pack);
+                  const state = lookupByVocabKeys(knownWordsMap, part.text, pack);
                   return (
-                    <span key={partIndex} data-leaf="">
-                      {part.text}
-                    </span>
+                    <WordCell
+                      key={partIndex}
+                      text={part.text}
+                      state={state}
+                      isActive={
+                        activeWord?.blockId === segmentIndex && activeWord.wordIndex === thisIndex
+                      }
+                      isPhraseHighlighted={phraseSet.has(thisIndex)}
+                      reading={wordReading(annotationMode, readings, key, state)}
+                      readingOverhangs={overhangs}
+                      onActivate={() => {
+                        onClearPhrase();
+                        onActivateWord({ blockId: segmentIndex, wordIndex: thisIndex });
+                        onWordClick(part.text, segment.text, source);
+                      }}
+                    />
                   );
-                }
-                wordIndex += 1;
-                const thisIndex = wordIndex;
-                const key = foldWord(part.text, pack);
-                const state = lookupByVocabKeys(knownWordsMap, part.text, pack);
-                return (
-                  <WordCell
-                    key={partIndex}
-                    text={part.text}
-                    state={state}
-                    isActive={
-                      activeWord?.blockId === segmentIndex && activeWord.wordIndex === thisIndex
-                    }
-                    isPhraseHighlighted={phraseSet.has(thisIndex)}
-                    reading={wordReading(annotationMode, readings, key, state)}
-                    readingOverhangs={overhangs}
-                    onActivate={() => {
-                      onClearPhrase();
-                      onActivateWord({ blockId: segmentIndex, wordIndex: thisIndex });
-                      onWordClick(part.text, segment.text, source);
-                    }}
-                  />
-                );
-              })}
-            </p>
-          </div>
+                })}
+              </p>{' '}
+            </div>
+            {paragraphEnds.has(segmentIndex) && <span aria-hidden className="block h-4" />}
+          </Fragment>
         );
       })}
     </div>

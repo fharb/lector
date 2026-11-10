@@ -108,10 +108,6 @@ export default function MarkdownReader({
   const seekNonce = useRef(0);
   const ignoreVideoTimeUntil = useRef(0);
   const stickyPlayerRef = useRef<HTMLDivElement>(null);
-  const wordPanelOpenRef = useRef(wordPanelOpen);
-  useEffect(() => {
-    wordPanelOpenRef.current = wordPanelOpen;
-  }, [wordPanelOpen]);
 
   const handleSeek = useCallback((seconds: number, segmentIndex: number) => {
     seekNonce.current += 1;
@@ -148,9 +144,7 @@ export default function MarkdownReader({
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!followVideo || activeSegmentIndex === null || !container || wordPanelOpenRef.current) {
-      return;
-    }
+    if (!followVideo || activeSegmentIndex === null || !container) return;
     const row = container.querySelector<HTMLElement>(
       `[data-segment-index="${activeSegmentIndex}"]`,
     );
