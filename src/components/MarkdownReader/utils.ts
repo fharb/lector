@@ -51,6 +51,21 @@ export function readableText(node: Node): string {
   return out;
 }
 
+/** Where `target` starts inside `root`, counted in `readableText` characters. */
+export function readableOffset(root: Node, target: Node): number {
+  let offset = 0;
+  const reached = (node: Node): boolean => {
+    if (node === target) return true;
+    if (node.nodeType === TEXT_NODE) offset += node.textContent?.length ?? 0;
+    if (node.nodeType !== ELEMENT_NODE || ANNOTATION_TAGS.has((node as Element).tagName)) {
+      return false;
+    }
+    return Array.from(node.childNodes).some(reached);
+  };
+  reached(root);
+  return offset;
+}
+
 /**
  * A Range's text, excluding ruby annotations.
  *

@@ -1,6 +1,6 @@
 'use client';
 
-import { paragraphEndIndexes } from './transcript-sync';
+import { cueSentence, paragraphEndIndexes } from './transcript-sync';
 import { Fragment, memo } from 'react';
 import type { LanguageConfig, WordSegmentation } from '@/lib/languages';
 import { foldWord, lookupByVocabKeys } from '@/lib/languages';
@@ -103,6 +103,7 @@ function TranscriptReader({
         };
 
         let wordIndex = -1;
+        let nextPartOffset = 0;
         return (
           <Fragment key={segmentIndex}>
             <div
@@ -136,6 +137,8 @@ function TranscriptReader({
                 }}
               >
                 {splitWords(segment.text, pack, segmentation).map((part, partIndex) => {
+                  const partOffset = nextPartOffset;
+                  nextPartOffset += part.text.length;
                   if (!part.isWord) {
                     return (
                       <span key={partIndex} data-leaf="">
@@ -161,7 +164,11 @@ function TranscriptReader({
                       onActivate={() => {
                         onClearPhrase();
                         onActivateWord({ blockId: segmentIndex, wordIndex: thisIndex });
-                        onWordClick(part.text, segment.text, source);
+                        onWordClick(
+                          part.text,
+                          cueSentence(segments, segmentIndex, partOffset, pack),
+                          source,
+                        );
                       }}
                     />
                   );

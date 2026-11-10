@@ -85,10 +85,10 @@ Tests: `e2e/audio-import.spec.ts`.
 | Reader | `src/components/MarkdownReader/index.tsx` | youtube branch |
 | Player | `src/components/YouTubePlayer/index.tsx` | `seekTo`, `onTimeUpdate` |
 | Position | `src/components/YouTubePlayer/iframe-api.ts` | `loadYouTubeIframeApi` |
-| Sync | `src/components/MarkdownReader/transcript-sync.ts` | `transcriptSegmentAt`, `belowStickyScrollTop` |
+| Sync | `src/components/MarkdownReader/transcript-sync.ts` | `transcriptSegmentAt`, `belowStickyScrollTop`, `cueSentence` |
 | Cues | `src/components/MarkdownReader/TranscriptReader.tsx` | `onSeek`, `onWordClick` |
 
-Cues live on `lessons.segments` JSON, not `transcript_segments`. Listen-along does not mount.
+Cues live on `lessons.segments` JSON, not `transcript_segments`. Listen-along does not mount. A clicked word gets the whole sentence across neighbouring cues, up to 300 characters, from `cueSentence`.
 
 The player reports its position four times a second. The reader highlights the matching cue and scrolls it to two lines below the sticky video. A jump in the video moves the text. Each new cue brings the text back to the current line, after a manual scroll and while the translation drawer is open. Cues flow together as running text, with paragraph breaks from `paragraphEndIndexes`. The `Follow video` control turns this off. The browser stores the choice under `SETTINGS_KEYS.FOLLOW_VIDEO`. On a wider screen, the `Video size` control switches between normal and large. A large player stops growing at 60% of the window height. It is never smaller than the normal player. The browser stores that choice under `SETTINGS_KEYS.PLAYER_SIZE`. If YouTube's `iframe_api` script is blocked, the text does not follow the video, but timestamps still seek.
 

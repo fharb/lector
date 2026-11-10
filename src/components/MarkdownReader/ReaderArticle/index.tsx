@@ -11,9 +11,15 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import type { LanguageConfig, WordSegmentation } from '@/lib/languages';
-import { foldWord, lookupByVocabKeys, splitSentences, vocabKeys } from '@/lib/languages';
+import { foldWord, lookupByVocabKeys, sentenceSpanAt, vocabKeys } from '@/lib/languages';
 import type { WordState } from '@/types';
-import { collectWords, computePhraseHighlightSet, readableText, splitWords } from '../utils';
+import {
+  collectWords,
+  computePhraseHighlightSet,
+  readableOffset,
+  readableText,
+  splitWords,
+} from '../utils';
 import { wordReading, type AnnotationMode } from '../annotation';
 import { readerWrapClass } from '../wrap';
 import { proseStyleVars } from '@/lib/prose-style';
@@ -47,18 +53,13 @@ export interface ReaderBlockProps {
   onClearPhrase: () => void;
 }
 
-function findSentence(element: HTMLElement, pack: LanguageConfig): string {
+export function findSentence(element: HTMLElement, pack: LanguageConfig): string {
   const block = element.closest('p, li, blockquote, h1, h2, h3, h4, h5, h6');
-  // readableText, not textContent: a ruby annotation would otherwise interleave
-  // into both strings (#289 4.4), the includes() test below would fail, and the
-  // whole polluted block would be returned and then saved to vocab.sentence.
-  const text = block ? readableText(block) : '';
-  const wordText = readableText(element);
-
-  for (const sentence of splitSentences(text, pack)) {
-    if (sentence.includes(wordText)) return sentence.trim();
-  }
-  return text.trim();
+  if (!block) return '';
+  // Not textContent: ruby annotations would be saved into vocab.sentence.
+  const text = readableText(block);
+  const { start, end } = sentenceSpanAt(text, readableOffset(block, element), pack);
+  return text.slice(start, end).trim();
 }
 
 /** Only re-render a body block when its own words or interaction state changed. */

@@ -94,6 +94,21 @@ test.describe('YouTube transcript import', () => {
     await expect(page.getByTestId('translation-drawer')).toBeVisible();
   });
 
+  test('a clicked word gets the sentence across neighbouring cues', async ({ page }) => {
+    const res = await page.request.post(apiUrl('/api/import/youtube'), {
+      data: { url: VIDEO_URL, languageCode: 'af', kind: 'standard', language: 'af' },
+    });
+    const { lessonId } = await res.json();
+
+    await page.goto(`/read/${lessonId}`);
+    await expect(page.getByTestId('transcript-reader')).toBeVisible({ timeout: 15000 });
+
+    await page.getByTestId('reader-word').filter({ hasText: 'rooi' }).first().click();
+    await expect(page.getByTestId('translation-drawer')).toContainText(
+      'n dogtertjie met die rooi kappie Sy loop deur die woud',
+    );
+  });
+
   test('pre-seeded known words highlight in the transcript', async ({ page }) => {
     // Seed "die" as known before importing (active-language rules apply).
     await page.request.post(apiUrl('/api/vocab'), {

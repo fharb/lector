@@ -5,6 +5,7 @@ import {
   isWordChar,
   snapToWordBoundaries,
   splitSentences,
+  sentenceSpanAt,
   countWords,
   countTypedWords,
   clozeTokens,
@@ -2000,5 +2001,33 @@ describe('snapToWordBoundaries with a word list', () => {
     const tapAt = text.indexOf('读');
     expect(snapToWordBoundaries(text, tapAt, tapAt + 1, zh, seg)).toEqual({ start: 1, end: 5 });
     expect(snapToWordBoundaries(text, tapAt, tapAt + 1, zh)).toEqual({ start: 3, end: 5 });
+  });
+});
+
+describe('sentenceSpanAt', () => {
+  const af = LANGUAGES.af;
+  const text = 'Ek sien die hond. Hy sien die kat.';
+  const sentenceAt = (offset: number) => {
+    const { start, end } = sentenceSpanAt(text, offset, af);
+    return text.slice(start, end);
+  };
+
+  it('finds the sentence holding the offset when a word repeats', () => {
+    expect(sentenceAt(text.indexOf('die'))).toBe('Ek sien die hond.');
+    expect(sentenceAt(text.lastIndexOf('die'))).toBe('Hy sien die kat.');
+  });
+
+  it('returns the last sentence for an offset past the end', () => {
+    expect(sentenceAt(text.length + 5)).toBe('Hy sien die kat.');
+  });
+
+  it('handles empty text', () => {
+    expect(sentenceSpanAt('', 0, af)).toEqual({ start: 0, end: 0 });
+  });
+
+  it('works in an unspaced script', () => {
+    const zh = '我喜欢读书。他来了。';
+    const { start, end } = sentenceSpanAt(zh, zh.indexOf('他'), LANGUAGES.zh);
+    expect(zh.slice(start, end)).toBe('他来了。');
   });
 });

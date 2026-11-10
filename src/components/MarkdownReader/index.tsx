@@ -6,22 +6,29 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Languages, SquarePen } from 'luci
 import { getLessonReadings, updateLessonProgress } from '@/lib/data-layer';
 import { createTrailingThrottle } from './throttle';
 import { snapToWordBoundaries } from './utils';
-import { belowStickyScrollTop, LINES_BELOW_VIDEO, transcriptSegmentAt } from './transcript-sync';
+import {
+  belowStickyScrollTop,
+  cueSentence,
+  LINES_BELOW_VIDEO,
+  transcriptSegmentAt,
+} from './transcript-sync';
 import {
   foldWord,
   getLanguageConfig,
   isValidLanguageCode,
   makeWordSegmentation,
-  splitSentences,
   tokenize,
 } from '@/lib/languages';
-import { parseSegmentWords, readableRangeText, readableText } from './utils';
+import { parseSegmentWords, readableOffset, readableRangeText } from './utils';
 import { usePhraseTouchSelection } from './usePhraseTouchSelection';
 import { useActiveLanguage, useProseStyleSettings } from '@/utils/hooks';
 import { resolveProseStyle } from '@/lib/prose-style';
 import { MarkdownReaderProps } from './types';
 import { Button } from '@/components/ui/button';
-import ReaderArticle, { type ActiveReaderWord } from './ReaderArticle';
+import ReaderArticle, {
+  findSentence as findBlockSentence,
+  type ActiveReaderWord,
+} from './ReaderArticle';
 import { ANNOTATION_MODES, ANNOTATION_MODE_LABELS, type AnnotationMode } from './annotation';
 import { SETTINGS_KEYS } from '@/app/settings/constants';
 import TranscriptReader from './TranscriptReader';
@@ -298,21 +305,17 @@ export default function MarkdownReader({
 
   const findSentence = useCallback(
     (element: HTMLElement): string => {
-      const block = element.closest('p, li, blockquote, h1, h2, h3, h4, h5, h6');
-      // readableText, not textContent — see the note on the ReaderArticle copy.
-      // A ruby annotation would interleave and corrupt vocab.sentence (#289 4.4).
-      const text = block ? readableText(block) : '';
-      const wordText = readableText(element);
-
-      const sentences = splitSentences(text, pack);
-      for (const sentence of sentences) {
-        if (sentence.includes(wordText)) {
-          return sentence.trim();
-        }
-      }
-      return text.trim();
+      const cue = element.closest<HTMLElement>('[data-segment-index]');
+      const cueText = element.closest('p');
+      if (!transcript || !cue || !cueText) return findBlockSentence(element, pack);
+      return cueSentence(
+        transcript.segments,
+        Number(cue.dataset.segmentIndex),
+        readableOffset(cueText, element),
+        pack,
+      );
     },
-    [pack],
+    [pack, transcript],
   );
 
   // The words of a selected phrase, folded, in document order.

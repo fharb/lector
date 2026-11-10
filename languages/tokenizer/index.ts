@@ -431,6 +431,23 @@ export function splitSentences(text: string, pack: LanguageConfig): string[] {
   return text.split(compile(pack.script).sentenceSplitter);
 }
 
+/** The start and end of the sentence holding the character at `offset`. */
+export function sentenceSpanAt(
+  text: string,
+  offset: number,
+  pack: LanguageConfig,
+): { start: number; end: number } {
+  let span = { start: 0, end: text.length };
+  let cursor = 0;
+  for (const sentence of splitSentences(text, pack)) {
+    const start = text.indexOf(sentence, cursor);
+    cursor = start + sentence.length;
+    span = { start, end: cursor };
+    if (offset < cursor) break;
+  }
+  return span;
+}
+
 /**
  * Word count for lesson stats. Spaced scripts keep the historical whitespace
  * count, so wordCount values for existing lessons stay byte-identical. Unspaced

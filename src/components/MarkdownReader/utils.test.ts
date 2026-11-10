@@ -5,6 +5,7 @@ import {
   collectWords,
   computePhraseHighlightSet,
   parseSegmentWords,
+  readableOffset,
   readableText,
   wordSpansBetween,
 } from './utils';
@@ -174,6 +175,17 @@ describe('readableText (#289 4.4)', () => {
 
   it('returns empty for an annotation asked about directly', () => {
     expect(readableText(el('RT', text('wǒ')))).toBe('');
+  });
+
+  it('counts the offset of a nested element in readable characters', () => {
+    const target = el('SPAN', text('读书'));
+    const block = el('P', el('SPAN', ruby('我', 'wǒ')), el('SPAN', ruby('喜欢', 'xǐhuan')), target);
+    expect(readableOffset(block, target)).toBe(3);
+  });
+
+  it('gives offset zero for the first element', () => {
+    const target = el('SPAN', text('Die'));
+    expect(readableOffset(el('P', target, text(' hond.')), target)).toBe(0);
   });
 });
 
