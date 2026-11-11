@@ -1,5 +1,5 @@
 import './test-guard';
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import path from 'path';
 import fs from 'fs';
@@ -44,13 +44,29 @@ beforeEach(() => {
   createSchema(db);
 });
 
-const known = (word: string, state = 'known', userId = 'local', language = 'af', domain: string | null = null) =>
+afterEach(() => {
+  db.close();
+  // Windows keeps a closed SQLite file open until its statements are collected.
+  Bun.gc(true);
+});
+
+const known = (
+  word: string,
+  state = 'known',
+  userId = 'local',
+  language = 'af',
+  domain: string | null = null,
+) =>
   db
-    .prepare('INSERT INTO knownWords (userId, word, language, state, domain) VALUES (?, ?, ?, ?, ?)')
+    .prepare(
+      'INSERT INTO knownWords (userId, word, language, state, domain) VALUES (?, ?, ?, ?, ?)',
+    )
     .run(userId, word, language, state, domain);
 
 const allKnown = () =>
-  db.prepare('SELECT userId, word, language, state, domain FROM knownWords ORDER BY word').all() as Array<{
+  db
+    .prepare('SELECT userId, word, language, state, domain FROM knownWords ORDER BY word')
+    .all() as Array<{
     userId: string;
     word: string;
     language: string;
@@ -120,10 +136,17 @@ describe('migrateFoldWordKeys (#289 0.9)', () => {
 
   test('NFC-normalizes vocab display text in place without deduping', () => {
     const decomposed = 'se' + COMBINING_CIRCUMFLEX;
-    db.prepare('INSERT INTO vocab (userId, id, text) VALUES (?, ?, ?)').run('local', 'v1', decomposed);
+    db.prepare('INSERT INTO vocab (userId, id, text) VALUES (?, ?, ?)').run(
+      'local',
+      'v1',
+      decomposed,
+    );
     db.prepare('INSERT INTO vocab (userId, id, text) VALUES (?, ?, ?)').run('local', 'v2', 'sê');
     migrateFoldWordKeys(db);
-    const rows = db.prepare('SELECT id, text FROM vocab ORDER BY id').all() as Array<{ id: string; text: string }>;
+    const rows = db.prepare('SELECT id, text FROM vocab ORDER BY id').all() as Array<{
+      id: string;
+      text: string;
+    }>;
     expect(rows).toHaveLength(2);
     expect(rows[0].text).toBe('sê');
     expect(rows[1].text).toBe('sê');

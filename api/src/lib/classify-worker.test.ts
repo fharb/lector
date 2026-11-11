@@ -444,9 +444,10 @@ describe('pollClassifyBatch', () => {
 
     const outcome = await pollClassifyBatch(db, provider);
     expect(outcome).toEqual({ state: 'ended', updated: 2 });
-    const domains = db
-      .prepare('SELECT word, domain FROM knownWords ORDER BY word')
-      .all() as { word: string; domain: string | null }[];
+    const domains = db.prepare('SELECT word, domain FROM knownWords ORDER BY word').all() as {
+      word: string;
+      domain: string | null;
+    }[];
     expect(domains).toEqual([
       { word: 'appel', domain: null },
       { word: 'brood', domain: null },
@@ -543,6 +544,8 @@ describe('purgeOrphanedBatches', () => {
       expect(statSync(`${path}-wal`).size).toBe(0);
       db.close();
     } finally {
+      // Windows keeps a closed SQLite file open until its statements are collected.
+      Bun.gc(true);
       rmSync(dir, { recursive: true, force: true });
     }
   });

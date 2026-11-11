@@ -63,6 +63,8 @@ afterEach(() => {
   delete process.env.DICT_ENV_PATH;
   delete process.env.DICT_RELEASE_BASE;
   reloadDictPins();
+  // Windows keeps a closed SQLite file open until its statements are collected.
+  Bun.gc(true);
   rmSync(dir, { recursive: true, force: true });
 });
 

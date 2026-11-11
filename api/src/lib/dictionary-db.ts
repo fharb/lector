@@ -395,8 +395,10 @@ const _stmtsByLang = new Map<string, Stmts>();
  * opens the new file.
  */
 export function invalidateDictionaryCache(language: string): void {
+  const db = _dbs.get(language);
   _dbs.delete(language);
   _stmtsByLang.delete(language);
+  db?.close();
 }
 
 function getStmts(language: string): Stmts | null {

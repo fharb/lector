@@ -1,5 +1,5 @@
 import './test-guard';
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import path from 'path';
 import fs from 'fs';
@@ -212,6 +212,12 @@ beforeEach(() => {
   db = new Database(DB_FILE);
   createOldSchema(db);
   seed(db);
+});
+
+afterEach(() => {
+  db.close();
+  // Windows keeps a closed SQLite file open until its statements are collected.
+  Bun.gc(true);
 });
 
 describe('migrateCompositeTenantKeys (#279)', () => {
