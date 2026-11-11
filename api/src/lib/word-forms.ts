@@ -85,6 +85,17 @@ export interface BaseOption {
 const GRAMMAR_LABEL_GLOSS =
   /singular|plural|-person|participle|indicative|nominative|genitive|dative|accusative|instrumental|prepositional/iu;
 const SPELLING_VARIANT_GLOSS = /\b(spelling|alternative form) of\b/iu;
+const FORM_OF_GLOSS =
+  /\b(?:inflection|form|imperative|participle|gerund|tense|past|present|future|short|feminine|masculine|neuter|comparative|superlative)\b[^;:]*\bof\b/iu;
+
+function hasOwnMeaning(glosses: string[]): boolean {
+  return glosses.some(
+    (gloss) =>
+      !GRAMMAR_LABEL_GLOSS.test(gloss) &&
+      !FORM_OF_GLOSS.test(gloss) &&
+      !SPELLING_VARIANT_GLOSS.test(gloss),
+  );
+}
 
 function comparableGloss(text: string): string {
   return text.normalize('NFD').replace(/́/gu, '').toLowerCase();
@@ -107,7 +118,10 @@ export function rankBaseOptions(input: {
       !candidates.some((candidate) => comparableGloss(gloss).includes(comparableGloss(candidate))),
   );
   const ranked = candidates
-    .filter((candidate) => !isOnlyAForm(candidate) && candidate !== key)
+    .filter(
+      (candidate) =>
+        candidate !== key && (!isOnlyAForm(candidate) || hasOwnMeaning(glossesOf(candidate))),
+    )
     .map((word) => ({ word, glosses: glossesOf(word) }))
     .filter((base) => base.glosses.some((gloss) => !SPELLING_VARIANT_GLOSS.test(gloss)))
     .sort((a, b) => b.glosses.length - a.glosses.length)

@@ -151,4 +151,29 @@ describe('rankBaseOptions', () => {
   test('drops a base word that is only an old spelling', () => {
     expect(rank('людьми', ['человѣкъ', 'пойти'])).toEqual(['пойти']);
   });
+
+  test('keeps a base word that is also a form of another word but has its own meaning', () => {
+    const own: Record<string, string[]> = { график: ['schedule, timetable', 'graph'] };
+    const options = rankBaseOptions({
+      key: 'графиком',
+      candidates: ['график'],
+      isOnlyAForm: (word) => word === 'график',
+      glossesOf: (word) => own[word] ?? [],
+    });
+    expect(options).toEqual([{ word: 'график', translation: 'schedule, timetable; graph' }]);
+  });
+
+  test('still drops a candidate that is only a form', () => {
+    const own: Record<string, string[]> = {
+      прочитавший: ['past active participle of прочитать'],
+      прочитать: ['to read'],
+    };
+    const options = rankBaseOptions({
+      key: 'прочитавшим',
+      candidates: ['прочитавший', 'прочитать'],
+      isOnlyAForm: (word) => word === 'прочитавший',
+      glossesOf: (word) => own[word] ?? [],
+    });
+    expect(options.map((option) => option.word)).toEqual(['прочитать']);
+  });
 });
