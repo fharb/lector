@@ -76,6 +76,7 @@ Practice uses `translateGloss`. That is the same `/gloss` route with no stream U
 - If the user taps again, `translationRequestId` drops stale results.
 - A session cache key is `${language}:${foldWord}`. If the user reloads the page, the cache is empty.
 - The client does not cache transport errors on lookup.
+- `src/lib/claude.ts` keeps AI answers for the browser session: the quick gloss per word, in-context and phrase translations per word and sentence, and Enrich per word. A reload clears them. "Re-translate with AI" passes `fresh` and replaces the answer.
 - Managed Free counts each gloss with `wordGlossesPerMonth` and a burst of 30 per 60 seconds.
 - Bring-your-own-key (BYOK) counts gloss with `llmRequestsPerMonth`. There is no burst limit.
 - CJK tap uses stored `segmentWords`. Phrase drag needs a space, so it does not apply to unspaced CJK.

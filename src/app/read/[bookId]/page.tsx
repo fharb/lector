@@ -1304,7 +1304,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     const isPhrase = wordPanel.word.includes(' ');
     try {
       if (isPhrase) {
-        const result = await translatePhrase(wordPanel.word, wordPanel.sentence);
+        const result = await translatePhrase(wordPanel.word, wordPanel.sentence, { fresh: true });
         setWordPanel((prev) => ({
           ...prev,
           translation: result.translation,
@@ -1320,7 +1320,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
           isDictionaryResult: false,
         }));
       } else {
-        const result = await translateWord(wordPanel.word, wordPanel.sentence);
+        const result = await translateWord(wordPanel.word, wordPanel.sentence, { fresh: true });
         const structured =
           result.senses && result.senses.length > 0
             ? {

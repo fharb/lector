@@ -1,5 +1,41 @@
-import { getActiveLanguage } from './data-layer';
+import { getActiveLanguage, getActivePack } from './data-layer';
+import { foldWord } from './languages';
 import { apiFetch } from './api-base';
+
+/** Re-ask the AI instead of reusing the answer remembered this session. */
+export interface AskOptions {
+  fresh?: boolean;
+}
+
+const MAX_REMEMBERED_ANSWERS = 2000;
+
+// AI answers for this browser session, oldest first. A failed request is dropped,
+// so the next click asks again.
+const rememberedAnswers = new Map<string, Promise<unknown>>();
+
+function answerKey(kind: string, word: string, sentence = ''): string {
+  return [kind, getActiveLanguage(), foldWord(word, getActivePack()), sentence].join('\u0000');
+}
+
+function remembered<T>(key: string, options: AskOptions | undefined, ask: () => Promise<T>) {
+  const known = options?.fresh ? undefined : rememberedAnswers.get(key);
+  if (known) return known as Promise<T>;
+  const answer = ask();
+  rememberedAnswers.delete(key);
+  rememberedAnswers.set(key, answer);
+  while (rememberedAnswers.size > MAX_REMEMBERED_ANSWERS) {
+    rememberedAnswers.delete(rememberedAnswers.keys().next().value as string);
+  }
+  answer.catch(() => {
+    if (rememberedAnswers.get(key) === answer) rememberedAnswers.delete(key);
+  });
+  return answer;
+}
+
+/** Forget every remembered AI answer. */
+export function forgetRememberedAnswers(): void {
+  rememberedAnswers.clear();
+}
 
 // Types
 export interface WordTranslation {
@@ -29,7 +65,17 @@ export interface PhraseTranslation {
  * @param sentence - The full sentence containing the word (for context)
  * @returns Translation with optional part of speech
  */
-export async function translateWord(word: string, sentence: string): Promise<WordTranslation> {
+export function translateWord(
+  word: string,
+  sentence: string,
+  options?: AskOptions,
+): Promise<WordTranslation> {
+  return remembered(answerKey('context', word, sentence), options, () =>
+    requestWordTranslation(word, sentence),
+  );
+}
+
+async function requestWordTranslation(word: string, sentence: string): Promise<WordTranslation> {
   const response = await apiFetch('/api/translate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -54,6 +100,22 @@ export async function translateWord(word: string, sentence: string): Promise<Wor
  * Pair with `enrichWord` for the opt-in rich entry (senses / IPA / etymology).
  */
 export async function streamWordGloss(
+  word: string,
+  sentence: string,
+  onDelta: (cumulative: string) => void,
+  options?: AskOptions,
+): Promise<string> {
+  const key = answerKey('gloss', word);
+  const known = options?.fresh ? undefined : rememberedAnswers.get(key);
+  if (known) {
+    const text = (await known) as string;
+    onDelta(text);
+    return text;
+  }
+  return remembered(key, { fresh: true }, () => requestWordGloss(word, sentence, onDelta));
+}
+
+async function requestWordGloss(
   word: string,
   sentence: string,
   onDelta: (cumulative: string) => void,
@@ -106,7 +168,15 @@ export async function translateGloss(word: string, sentence: string): Promise<Wo
  * forms) — the "enrich" action behind the streamed gloss. Same shape as
  * translateWord; hits the dedicated /enrich endpoint.
  */
-export async function enrichWord(word: string, sentence: string): Promise<WordTranslation> {
+export function enrichWord(
+  word: string,
+  sentence: string,
+  options?: AskOptions,
+): Promise<WordTranslation> {
+  return remembered(answerKey('enrich', word), options, () => requestEnrichment(word, sentence));
+}
+
+async function requestEnrichment(word: string, sentence: string): Promise<WordTranslation> {
   const response = await apiFetch('/api/translate/enrich', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -127,7 +197,17 @@ export async function enrichWord(word: string, sentence: string): Promise<WordTr
  * @param sentence - The full sentence containing the phrase (for context)
  * @returns Translation with optional literal breakdown and idiomatic meaning
  */
-export async function translatePhrase(
+export function translatePhrase(
+  phrase: string,
+  sentence: string,
+  options?: AskOptions,
+): Promise<PhraseTranslation> {
+  return remembered(answerKey('phrase', phrase, sentence), options, () =>
+    requestPhraseTranslation(phrase, sentence),
+  );
+}
+
+async function requestPhraseTranslation(
   phrase: string,
   sentence: string,
 ): Promise<PhraseTranslation> {
