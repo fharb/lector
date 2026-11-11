@@ -68,7 +68,7 @@ If you do not want to run a server, use the hosted app at [app.lector.dev](https
 
 ## Features
 
-- **Reader.** Import a file or a stream. Each word has a state: new, learning, or known. Tap a word for a translation. Mark all remaining new words in a lesson as known in one action, or mark its known words as unknown. The reader ignores numbers and years. In Russian and French, the inflected forms of a word take the state of its base word. In Russian, the translation panel marks the stressed vowel. The reader accepts:
+- **Reader.** Import a file or a stream. Each word has a state: new, learning, or known. Tap a word for a translation. The reader header shows the share of the lesson's words that are known, learning, and new. Mark all remaining new words in a lesson as known in one action, or mark its known words as unknown. The reader ignores numbers and years. In Russian and French, the inflected forms of a word take the state of its base word. In Russian, the translation panel marks the stressed vowel. For an inflected form, the panel shows the meaning of its base word. The Translations button prints a short translation for each word that you are still learning. Choose it from the Translations menu. The translation goes above the word, or in a list in the right margin, in reading order. The text stays in place. On a narrow screen, the list goes under the paragraph. New, known, and ignored words do not get one. The reader accepts:
 
   - an EPUB file
   - a Markdown file
@@ -81,7 +81,7 @@ If you do not want to run a server, use the hosted app at [app.lector.dev](https
 - **Vocabulary.** Save words as you read. In Russian and French, a save stores the base form of the word, or the exact form if you choose it. Known-word counts count the base form once. The vocabulary list also shows words you marked as known without saving them, and you can change the state of any word from the list. Track known and learning states. Save phrases as well as single words.
 - **Anki.** The [Lector Sync add-on](https://ankiweb.net/shared/info/1098736891) on AnkiWeb is the recommended integration. The add-on code is `1098736891`. Cloud mode and a remote HTTPS self-host always use it. A local self-host can instead push cards to AnkiConnect on the computer that runs Anki. Reviews in Anki can update mastery in Lector.
 - **Tutor and journal.** Ask grammar questions in plain language. Write in the target language. The tutor returns corrections. Use the Claude API or a local model.
-- **Listen.** Optional text-to-speech (TTS). YouTube captions stay timestamped, and the transcript can follow the video. A podcast upload can become a transcript and a listen-along lesson.
+- **Listen.** Optional text-to-speech (TTS). YouTube captions stay timestamped, and the transcript can follow the video. You can hide the timestamps. A podcast upload can become a transcript and a listen-along lesson.
 - **Data.** SQLite on your server. Export and restore from Settings. The self-host does not need a cloud account.
 
 ## Languages

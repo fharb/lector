@@ -207,6 +207,8 @@ Tests: `e2e/reader-phrase-selection.spec.ts`, `e2e/reader-phrase-touch.spec.ts`.
 
 `handleNestedLookup` drops Russian stress marks from the word, then calls `handleWordClick(nestedWord, wordPanel.sentence)`. The call keeps the original sentence. A save after that still records the encounter.
 
+For a form, `baseMeanings` in `src/components/TranslationDrawer/base-meanings.ts` shows the meaning of each base word in `baseOptions` above the senses, so a form whose senses are only grammar labels still has a meaning.
+
 Tests: `e2e/nested-definitions.spec.ts`.
 
 ## Cache accepted translation

@@ -3,10 +3,12 @@ import { getLanguageConfig } from '@/lib/languages';
 import type { WordState } from '@/types';
 import {
   knownStoredWords,
+  lessonWordStats,
   remainingBaseWords,
   remainingWordKeys,
   tappableMarkdownText,
   uniqueWordKeys,
+  wordStatPercents,
 } from './remaining-words';
 
 const af = getLanguageConfig('af');
@@ -123,5 +125,52 @@ describe('knownStoredWords', () => {
     expect(
       knownStoredWords(['читала', 'читаю'], states([['читать', 'known']]), several, ru),
     ).toEqual(['читать']);
+  });
+});
+
+describe('lessonWordStats', () => {
+  const states = new Map<string, WordState>([
+    ['hond', 'known'],
+    ['kat', 'level2'],
+    ['muis', 'level4'],
+    ['weg', 'ignored'],
+    ['boom', 'new'],
+  ]);
+
+  it('counts known, learning and new words, and leaves ignored ones out', () => {
+    expect(lessonWordStats(['hond', 'kat', 'muis', 'weg', 'boom', 'huis'], states, af)).toEqual({
+      known: 1,
+      learning: 2,
+      new: 2,
+      total: 5,
+    });
+  });
+
+  it('is empty for a lesson with only ignored words', () => {
+    expect(lessonWordStats(['weg'], states, af)).toEqual({
+      known: 0,
+      learning: 0,
+      new: 0,
+      total: 0,
+    });
+  });
+});
+
+describe('wordStatPercents', () => {
+  it('rounds to whole percentages that add up to 100', () => {
+    const percents = wordStatPercents({ known: 1, learning: 1, new: 1, total: 3 });
+    expect(percents).toEqual({ known: 33, learning: 33, new: 34 });
+  });
+
+  it('gives zeros for no words', () => {
+    expect(wordStatPercents({ known: 0, learning: 0, new: 0, total: 0 })).toEqual({
+      known: 0,
+      learning: 0,
+      new: 0,
+    });
+  });
+
+  it('gives 100 known when every word is known', () => {
+    expect(wordStatPercents({ known: 4, learning: 0, new: 0, total: 4 }).known).toBe(100);
   });
 });

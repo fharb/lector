@@ -75,6 +75,8 @@ test.describe('YouTube transcript import', () => {
     await timestamps.nth(1).click();
     await expect(player).toHaveAttribute('data-seek-seconds', '3');
     await expect(segments.nth(1)).toHaveAttribute('data-active-segment', 'true');
+    await expect(segments.nth(1)).toHaveCSS('box-shadow', /rgb/);
+    await expect(segments.nth(0)).toHaveCSS('box-shadow', 'none');
   });
 
   test('a transcript word is clickable and opens the translation drawer', async ({ page }) => {
@@ -341,6 +343,26 @@ test.describe('YouTube transcript follows the video', () => {
       'data-active-segment',
       'true',
     );
+  });
+
+  test('hides the timestamps and remembers the choice', async ({ page }) => {
+    await openWithFakePlayer(page, await importLesson(page));
+    const toggle = page.getByTestId('transcript-timestamps-toggle');
+    const timestamps = page.getByTestId('transcript-timestamp');
+    await expect(toggle).toHaveText('Timestamps: On');
+    await expect(timestamps).toHaveCount(3);
+
+    await toggle.click();
+    await expect(toggle).toHaveText('Timestamps: Off');
+    await expect(timestamps).toHaveCount(0);
+    await expect(page.getByTestId('transcript-segment')).toHaveCount(3);
+
+    await page.reload();
+    await expect(page.getByTestId('transcript-timestamps-toggle')).toHaveText('Timestamps: Off');
+    await expect(timestamps).toHaveCount(0);
+
+    await page.getByTestId('transcript-timestamps-toggle').click();
+    await expect(timestamps).toHaveCount(3);
   });
 
   test('can be turned off, and remembers the choice', async ({ page }) => {

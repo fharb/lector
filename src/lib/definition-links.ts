@@ -21,6 +21,7 @@ const FORM_OF_KEYWORDS = new Set([
   'plural',
   'singular',
   'form',
+  'inflection',
   'diminutive',
   'augmentative',
   'abbreviation',

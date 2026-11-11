@@ -14,6 +14,7 @@ import NestedWordButton from './components/NestedWordButton';
 import Gloss from './components/Gloss';
 import { StressedWord } from './StressedWord';
 import { lookupAnnouncement } from './lookup-announcement';
+import { baseMeanings } from './base-meanings';
 
 export { type ExpandedDictionaryEntry } from './types';
 export { TranslationDrawerSlot } from './slot';
@@ -112,6 +113,7 @@ export default function TranslationDrawer({
 
   const senses = entry?.senses ?? [];
   const hasRichEntry = senses.length > 0;
+  const formOf = baseMeanings(word, entry?.baseOptions, pack);
   const fallbackTranslation = aiTranslation ?? null;
   const announcement = lookupAnnouncement({
     isOpen,
@@ -327,25 +329,51 @@ export default function TranslationDrawer({
                   )}
                 </div>
               ) : hasRichEntry ? (
-                <ol className="space-y-3">
-                  {senses.map((sense, i) => (
-                    <li key={i} className="flex gap-3">
-                      <span className="mt-0.5 flex-shrink-0 text-xs font-medium text-muted-foreground tabular-nums">
-                        {i + 1}.
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        {sense.partOfSpeech && (
-                          <span className="mr-2 inline-block rounded bg-muted px-1.5 py-0.5 align-middle text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-                            {sense.partOfSpeech}
-                          </span>
-                        )}
-                        <span className="leading-relaxed text-foreground">
-                          <Gloss text={sense.gloss} onLookupWord={onLookupWord} />
+                <>
+                  {formOf.length > 0 && (
+                    <div
+                      data-testid="base-meanings"
+                      className="mb-4 space-y-1.5 rounded-lg bg-muted/60 px-3 py-2.5"
+                    >
+                      {formOf.map((base) => (
+                        <p key={base.word} className="text-sm leading-relaxed">
+                          {onLookupWord ? (
+                            <NestedWordButton
+                              word={base.word}
+                              onLookupWord={onLookupWord}
+                              testId="base-meaning-link"
+                            />
+                          ) : (
+                            <TargetText className="font-medium" as="span">
+                              {base.word}
+                            </TargetText>
+                          )}
+                          <span className="text-muted-foreground"> — </span>
+                          <span className="text-foreground">{base.translation}</span>
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  <ol className="space-y-3">
+                    {senses.map((sense, i) => (
+                      <li key={i} className="flex gap-3">
+                        <span className="mt-0.5 flex-shrink-0 text-xs font-medium text-muted-foreground tabular-nums">
+                          {i + 1}.
                         </span>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
+                        <div className="min-w-0 flex-1">
+                          {sense.partOfSpeech && (
+                            <span className="mr-2 inline-block rounded bg-muted px-1.5 py-0.5 align-middle text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+                              {sense.partOfSpeech}
+                            </span>
+                          )}
+                          <span className="leading-relaxed text-foreground">
+                            <Gloss text={sense.gloss} onLookupWord={onLookupWord} />
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </>
               ) : fallbackTranslation ? (
                 <div>
                   {aiPartOfSpeech && (

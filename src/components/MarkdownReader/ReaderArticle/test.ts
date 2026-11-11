@@ -18,6 +18,8 @@ function props(overrides: Partial<ReaderBlockProps> = {}): ReaderBlockProps {
     knownWordsMap: new Map(),
     readings: null,
     annotationMode: 'off',
+    glosses: null,
+    glossPlacement: 'above',
     highlightedPhrase: [],
     activeWord: null,
     onWordClick,
@@ -81,5 +83,23 @@ describe('readerBlockPropsEqual', () => {
   it('re-renders every block when the readings arrive', () => {
     const readings = new Map([['son', 'sɔn']]);
     expect(readerBlockPropsEqual(props(), props({ readings }))).toBe(false);
+  });
+  it('re-renders when translations turn on or a word in the block gets one', () => {
+    const glosses = new Map([['son', 'sun']]);
+    expect(readerBlockPropsEqual(props(), props({ glosses: new Map() }))).toBe(false);
+    expect(readerBlockPropsEqual(props({ glosses: new Map() }), props({ glosses }))).toBe(false);
+  });
+
+  it('re-renders when the translations move beside the text', () => {
+    const glosses = new Map([['son', 'sun']]);
+    expect(
+      readerBlockPropsEqual(props({ glosses }), props({ glosses, glossPlacement: 'side' })),
+    ).toBe(false);
+  });
+
+  it('skips a block when a gloss changes only for a word outside it', () => {
+    const before = props({ glosses: new Map() });
+    const after = props({ glosses: new Map([['maan', 'moon']]) });
+    expect(readerBlockPropsEqual(before, after)).toBe(true);
   });
 });

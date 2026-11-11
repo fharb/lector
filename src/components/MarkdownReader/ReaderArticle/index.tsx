@@ -21,6 +21,8 @@ import {
   splitWords,
 } from '../utils';
 import { wordReading, type AnnotationMode } from '../annotation';
+import { sideGlossItems, type GlossPlacement } from '../word-glosses';
+import SideGlosses from '../SideGlosses';
 import { readerWrapClass } from '../wrap';
 import { proseStyleVars } from '@/lib/prose-style';
 import WordCell from '@/components/WordCell';
@@ -46,6 +48,8 @@ export interface ReaderBlockProps {
    */
   readings: Map<string, string> | null;
   annotationMode: AnnotationMode;
+  glosses: Map<string, string> | null;
+  glossPlacement: GlossPlacement;
   highlightedPhrase: string[];
   activeWord: ActiveReaderWord | null;
   onWordClick: (word: string, sentence: string) => void;
@@ -78,6 +82,7 @@ export function readerBlockPropsEqual(previous: ReaderBlockProps, next: ReaderBl
     // immutable per lesson, so identity is enough.
     previous.annotationMode !== next.annotationMode ||
     previous.readings !== next.readings ||
+    previous.glossPlacement !== next.glossPlacement ||
     previous.onWordClick !== next.onWordClick ||
     previous.onActivateWord !== next.onActivateWord ||
     previous.onClearPhrase !== next.onClearPhrase
@@ -95,7 +100,10 @@ export function readerBlockPropsEqual(previous: ReaderBlockProps, next: ReaderBl
     next.activeWord?.blockId === next.blockId ? next.activeWord.wordIndex : null;
   if (previousActiveIndex !== nextActiveIndex) return false;
 
-  if (previous.knownWordsMap === next.knownWordsMap) return true;
+  if ((previous.glosses === null) !== (next.glosses === null)) return false;
+  if (previous.knownWordsMap === next.knownWordsMap && previous.glosses === next.glosses) {
+    return true;
+  }
   const words = new Set(
     collectWords(previous.children, previous.pack, previous.segmentation).flatMap((word) =>
       vocabKeys(word, previous.pack),
@@ -103,6 +111,7 @@ export function readerBlockPropsEqual(previous: ReaderBlockProps, next: ReaderBl
   );
   for (const word of words) {
     if (previous.knownWordsMap.get(word) !== next.knownWordsMap.get(word)) return false;
+    if (previous.glosses?.get(word) !== next.glosses?.get(word)) return false;
   }
   return true;
 }
@@ -116,17 +125,17 @@ const ReaderBlock = memo(function ReaderBlock({
   knownWordsMap,
   readings,
   annotationMode,
+  glosses,
+  glossPlacement,
   highlightedPhrase,
   activeWord,
   onWordClick,
   onActivateWord,
   onClearPhrase,
 }: ReaderBlockProps) {
-  const phraseSet = computePhraseHighlightSet(
-    collectWords(children, pack, segmentation),
-    highlightedPhrase,
-    pack,
-  );
+  const blockWords = collectWords(children, pack, segmentation);
+  const phraseSet = computePhraseHighlightSet(blockWords, highlightedPhrase, pack);
+  const glossesAbove = glossPlacement === 'above' ? glosses : null;
   // Whether the reading sits out of flow above the word, or in the line box
   // where ruby layout widens the word to fit it. See `annotationOverhang`.
   const overhangs = pack.pronunciation.annotationOverhang;
@@ -147,6 +156,7 @@ const ReaderBlock = memo(function ReaderBlock({
         const state = lookupByVocabKeys(knownWordsMap, part.text, pack);
         const isPhraseHighlighted = phraseSet.has(wordIndex);
         const isActiveWord = activeWord?.blockId === blockId && activeWord.wordIndex === wordIndex;
+        const gloss = glossesAbove ? lookupByVocabKeys(glossesAbove, part.text, pack) : undefined;
 
         return (
           <WordCell
@@ -155,8 +165,8 @@ const ReaderBlock = memo(function ReaderBlock({
             state={state}
             isActive={isActiveWord}
             isPhraseHighlighted={isPhraseHighlighted}
-            reading={wordReading(annotationMode, readings, key, state)}
-            readingOverhangs={overhangs}
+            reading={gloss ?? wordReading(annotationMode, readings, key, state)}
+            readingOverhangs={gloss ? false : overhangs}
             onActivate={(text, element) => {
               onClearPhrase();
               onActivateWord({ blockId, wordIndex });
@@ -189,16 +199,35 @@ const ReaderBlock = memo(function ReaderBlock({
   // how much depends on the layout. Both leadings are resolved once per lesson
   // and published as custom properties by the article below (#570), so a reader
   // who tightens the text tightens the annotated lines with it.
-  const annotated = annotationMode !== 'off' && readings !== null;
+  const annotated = (annotationMode !== 'off' && readings !== null) || glossesAbove !== null;
   const lineHeight = annotated
     ? 'var(--reader-line-height-annotated)'
     : 'var(--reader-line-height)';
-  return Tag === 'p' ? (
-    <p className="my-5" style={{ lineHeight }}>
+  const beside = glossPlacement === 'side';
+  const side =
+    glosses && glossPlacement !== 'above' ? (
+      <SideGlosses items={sideGlossItems(blockWords, glosses, pack)} pack={pack} beside={beside} />
+    ) : null;
+  if (Tag === 'p') {
+    const paragraph = (
+      <p className="my-5" style={{ lineHeight }}>
+        {content}
+      </p>
+    );
+    return side ? (
+      <div className={beside ? 'relative' : undefined}>
+        {paragraph}
+        {side}
+      </div>
+    ) : (
+      paragraph
+    );
+  }
+  return (
+    <li className={side && beside ? 'relative' : undefined} style={{ lineHeight }}>
       {content}
-    </p>
-  ) : (
-    <li style={{ lineHeight }}>{content}</li>
+      {side}
+    </li>
   );
 }, readerBlockPropsEqual);
 
@@ -210,6 +239,8 @@ function ReaderArticle({
   knownWordsMap,
   readings,
   annotationMode,
+  glosses,
+  glossPlacement,
   highlightedPhrase,
   activeWord,
   onWordClick,
@@ -223,6 +254,8 @@ function ReaderArticle({
     knownWordsMap,
     readings,
     annotationMode,
+    glosses,
+    glossPlacement,
     highlightedPhrase,
     activeWord,
     onWordClick,

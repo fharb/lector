@@ -39,6 +39,10 @@ For a pack that sets `wordForms` (Russian, French), the reader also loads `GET /
 
 The vocab page shows rated words with no `vocab` row as well, through `withKnownOnlyEntries`. `setListEntriesState` changes a row: a learning level creates a `vocab` row, and unknown calls `POST /api/known-words/remove`. The route keeps a saved entry, in the new state. A word that starts with a digit is a number: `withIgnoredNumbers` shows it as ignored, and the app does not look it up or save it from the reader. `MarkKnownUnknown` in the reader sends the words from `knownStoredWords` to the same route.
 
+The `Translations` menu in the reader header sets `GlossMode`: off, above each word in a learning level, or in the right margin of each paragraph in reading order through `sideGlossItems` and `SideGlosses`. `sideGlossWidth` measures the margin. With no room, the list goes under the paragraph. `lessonGlosses` in `src/components/MarkdownReader/word-glosses.ts` builds the map. The gloss comes from the saved `vocab.translation` of the word or its base word. If neither has one, it comes from `POST /api/dictionary/meanings`. The browser stores the choice under `SETTINGS_KEYS.SHOW_GLOSSES`.
+
+The reader header shows `LessonWordStats` from `lessonWordStats`: the lesson's different words by state, from the same map that colours them. Ignored words and numbers are left out.
+
 Ignore does not write the translation cache. Known and levels do, for single words with no dict hit. See [translation.md](translation.md#cache-accepted-translation).
 
 Practice mastery 100 calls `updateWordState` in `persistReview`. That is `POST /api/known-words`.

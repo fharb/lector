@@ -5,6 +5,7 @@ import {
   belowStickyScrollTop,
   cueSentence,
   paragraphEndIndexes,
+  paragraphGroups,
   transcriptSegmentAt,
 } from './transcript-sync';
 
@@ -112,5 +113,19 @@ describe('cueSentence', () => {
 
   it('returns the cue itself when it is the only one', () => {
     expect(cueSentence(cues('Net een'), 0, 0, af)).toBe('Net een');
+  });
+});
+
+describe('paragraphGroups', () => {
+  it('splits cues after each paragraph end and keeps the rest', () => {
+    expect(paragraphGroups(5, new Set([1, 3]))).toEqual([[0, 1], [2, 3], [4]]);
+  });
+
+  it('keeps every cue in one group with no ends', () => {
+    expect(paragraphGroups(3, new Set())).toEqual([[0, 1, 2]]);
+  });
+
+  it('returns no groups for no cues', () => {
+    expect(paragraphGroups(0, new Set())).toEqual([]);
   });
 });

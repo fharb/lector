@@ -172,6 +172,33 @@ test.describe('Recognizing word forms', () => {
     expect(await savedStressed.json()).toEqual([]);
   });
 
+  test('shows the meaning of the base word for a form', async ({ page }) => {
+    await switchToRussian(page);
+    const base = word('читать');
+    const form = word('читала');
+    const lessonId = await createLesson(page, 'ru', form);
+    await page.route('**/api/dictionary/lookup*', (route) =>
+      route.fulfill({
+        json: {
+          entry: {
+            word: form,
+            senses: [{ partOfSpeech: 'verb', gloss: `feminine singular past of ${base}` }],
+            baseOptions: [{ word: base, translation: 'to read' }],
+            source: 'dict',
+          },
+        },
+      }),
+    );
+
+    await page.goto(`/read/${lessonId}`);
+    await lookup(page, form).click();
+
+    const meanings = page.getByTestId('base-meanings');
+    await expect(meanings).toContainText(base, { timeout: 10000 });
+    await expect(meanings).toContainText('to read');
+    await expect(page.getByTestId('base-meaning-link')).toHaveText(base);
+  });
+
   test('saves the base form and colours the tapped form', async ({ page }) => {
     await switchToRussian(page);
     const base = word('читать');

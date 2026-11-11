@@ -62,7 +62,9 @@ describe('findNestedWordRef — segmentation and punctuation', () => {
   });
 
   test('cuts at colon', () => {
-    expect(findNestedWordRef('partitive form of ander: else, other, different')?.word).toBe('ander');
+    expect(findNestedWordRef('partitive form of ander: else, other, different')?.word).toBe(
+      'ander',
+    );
   });
 
   test('strips trailing sentence punctuation from the word', () => {
@@ -79,7 +81,9 @@ describe('findNestedWordRef — segmentation and punctuation', () => {
 
   test('keeps Afrikaans diacritics and hyphens in the word', () => {
     expect(findNestedWordRef('preterite of hê; had')?.word).toBe('hê');
-    expect(findNestedWordRef('alternative form of agt-en-negentigste')?.word).toBe('agt-en-negentigste');
+    expect(findNestedWordRef('alternative form of agt-en-negentigste')?.word).toBe(
+      'agt-en-negentigste',
+    );
     expect(findNestedWordRef('plural of Algeriër')?.word).toBe('Algeriër');
   });
 
@@ -110,7 +114,9 @@ describe('findNestedWordRef — ordinary English "of" must not linkify', () => {
     ).toBeNull();
     expect(findNestedWordRef('initialism of National Party')).toBeNull();
     expect(
-      findNestedWordRef('Optionally forms the perfect tense of the verbs wees (“be”), trou (“marry”).'),
+      findNestedWordRef(
+        'Optionally forms the perfect tense of the verbs wees (“be”), trou (“marry”).',
+      ),
     ).toBeNull();
   });
 
@@ -128,5 +134,12 @@ describe('findNestedWordRef — ordinary English "of" must not linkify', () => {
     expect(findNestedWordRef('')).toBeNull();
     expect(findNestedWordRef('plural of')).toBeNull();
     expect(findNestedWordRef('plural of ')).toBeNull();
+  });
+  test('links the base word of an inflection gloss', () => {
+    expect(findNestedWordRef('inflection of envahir:')).toEqual({
+      prefix: 'inflection of ',
+      word: 'envahir',
+      suffix: ':',
+    });
   });
 });

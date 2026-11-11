@@ -45,6 +45,21 @@ export function paragraphEndIndexes(segments: Pick<TranscriptSegment, 'text'>[])
   return ends;
 }
 
+/** Cue indexes grouped into paragraphs, using the ends from `paragraphEndIndexes`. */
+export function paragraphGroups(count: number, ends: Set<number>): number[][] {
+  const groups: number[][] = [];
+  let current: number[] = [];
+  for (let index = 0; index < count; index++) {
+    current.push(index);
+    if (ends.has(index)) {
+      groups.push(current);
+      current = [];
+    }
+  }
+  if (current.length > 0) groups.push(current);
+  return groups;
+}
+
 const MAX_CUE_SENTENCE_CHARS = 300;
 
 /**

@@ -1,10 +1,19 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+  type CSSProperties,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ChevronLeft, ChevronRight, Languages, SquarePen } from 'lucide-react';
 import { getLessonReadings, updateLessonProgress } from '@/lib/data-layer';
 import { createTrailingThrottle } from './throttle';
+import { sideGlossWidth } from './word-glosses';
 import { snapToWordBoundaries } from './utils';
 import {
   belowStickyScrollTop,
@@ -46,6 +55,8 @@ export default function MarkdownReader({
   onSaveText,
   onEditingChange,
   knownWordsMap,
+  glosses = null,
+  glossPlacement = 'above',
   prevLesson,
   nextLesson,
   headerAction,
@@ -108,10 +119,27 @@ export default function MarkdownReader({
     }
   }, [lesson.sourceType, lesson.segments, lesson.sourceMeta]);
 
+  const [sideWidth, setSideWidth] = useState<number | null>(null);
+  const isTranscript = transcript !== null;
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || glossPlacement !== 'side') return;
+    // Must match the max-w of TranscriptReader and ReaderArticle.
+    const columnEm = isTranscript ? 46 : 38;
+    const update = () =>
+      setSideWidth(sideGlossWidth(container.clientWidth, prose.fontSize, columnEm));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [glossPlacement, isTranscript, prose.fontSize]);
+  const placement = glossPlacement === 'side' && sideWidth === null ? 'below' : glossPlacement;
+
   const [seekTarget, setSeekTarget] = useState<SeekTarget | null>(null);
   const [activeSegmentIndex, setActiveSegmentIndex] = useState<number | null>(null);
   const [followVideo, setFollowVideo] = useState(true);
   const [largePlayer, setLargePlayer] = useState(false);
+  const [showTimestamps, setShowTimestamps] = useState(true);
   const seekNonce = useRef(0);
   const ignoreVideoTimeUntil = useRef(0);
   const stickyPlayerRef = useRef<HTMLDivElement>(null);
@@ -134,6 +162,7 @@ export default function MarkdownReader({
   useEffect(() => {
     if (localStorage.getItem(SETTINGS_KEYS.FOLLOW_VIDEO) === 'false') setFollowVideo(false);
     if (localStorage.getItem(SETTINGS_KEYS.PLAYER_SIZE) === 'large') setLargePlayer(true);
+    if (localStorage.getItem(SETTINGS_KEYS.SHOW_TIMESTAMPS) === 'false') setShowTimestamps(false);
   }, []);
 
   const togglePlayerSize = useCallback(() => {
@@ -141,6 +170,12 @@ export default function MarkdownReader({
     localStorage.setItem(SETTINGS_KEYS.PLAYER_SIZE, next ? 'large' : 'normal');
     setLargePlayer(next);
   }, [largePlayer]);
+
+  const toggleTimestamps = useCallback(() => {
+    const next = !showTimestamps;
+    localStorage.setItem(SETTINGS_KEYS.SHOW_TIMESTAMPS, String(next));
+    setShowTimestamps(next);
+  }, [showTimestamps]);
 
   const toggleFollowVideo = useCallback(() => {
     const next = !followVideo;
@@ -473,6 +508,11 @@ export default function MarkdownReader({
         onScroll={handleScroll}
         onMouseUp={handleMouseUp}
         className="flex-1 overflow-auto print:block print:h-auto print:overflow-visible"
+        style={
+          placement === 'side' && sideWidth !== null
+            ? ({ '--side-gloss-width': `${sideWidth}px` } as CSSProperties)
+            : undefined
+        }
       >
         {isEditing ? (
           <div className="mx-auto max-w-[38em] px-4 py-8 sm:px-8 sm:py-12">
@@ -539,6 +579,15 @@ export default function MarkdownReader({
                   <Button
                     variant="ghost"
                     size="xs"
+                    onClick={toggleTimestamps}
+                    data-testid="transcript-timestamps-toggle"
+                    className="text-muted-foreground"
+                  >
+                    Timestamps: {showTimestamps ? 'On' : 'Off'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
                     onClick={toggleFollowVideo}
                     data-testid="transcript-follow-toggle"
                     className="text-muted-foreground"
@@ -557,6 +606,9 @@ export default function MarkdownReader({
               knownWordsMap={knownWordsMap}
               readings={readings}
               annotationMode={annotationMode}
+              glosses={glosses}
+              glossPlacement={placement}
+              showTimestamps={showTimestamps}
               highlightedPhrase={highlightedPhrase}
               activeWord={activeWord}
               activeSegmentIndex={activeSegmentIndex}
@@ -575,6 +627,8 @@ export default function MarkdownReader({
             knownWordsMap={knownWordsMap}
             readings={readings}
             annotationMode={annotationMode}
+            glosses={glosses}
+            glossPlacement={placement}
             highlightedPhrase={highlightedPhrase}
             activeWord={activeWord}
             onWordClick={onWordClick}

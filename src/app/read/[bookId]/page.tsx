@@ -7,9 +7,17 @@ import MarkdownReader from '@/components/MarkdownReader';
 import OnboardingCoach from '@/components/OnboardingCoach';
 import TranslationDrawer, { TranslationDrawerSlot } from '@/components/TranslationDrawer';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import ListenAlong from '@/components/ListenAlong';
 import MarkKnownUnknown from '@/components/MarkKnownUnknown';
 import MarkRemainingKnown from '@/components/MarkRemainingKnown';
+import LessonWordStats from '@/components/LessonWordStats';
 import {
   type Lesson,
   type LessonSummary,
@@ -25,6 +33,8 @@ import {
   lessonAudioUrl,
   retryTranscription,
   getKnownWordsMap,
+  getAllVocab,
+  getVocabMeanings,
   bulkUpdateWordStates,
   removeKnownWords,
   saveVocab,
@@ -54,7 +64,8 @@ import {
   withoutStress,
 } from '@/lib/languages';
 import { toast } from 'sonner';
-import { Headphones, LoaderCircle } from 'lucide-react';
+import { Captions, Headphones, LoaderCircle } from 'lucide-react';
+import { SETTINGS_KEYS } from '@/app/settings/constants';
 import { v4 as uuidv4 } from 'uuid';
 import { WordPanelState } from '../types';
 import { useActiveLanguage } from '@/utils/hooks';
@@ -66,6 +77,16 @@ import {
   withRecognizedForms,
 } from '@/components/MarkdownReader/word-families';
 import {
+  GLOSS_MODE_LABELS,
+  GLOSS_MODE_MENU_LABELS,
+  GLOSS_MODES,
+  lessonGlosses,
+  parseGlossMode,
+  wordsNeedingMeanings,
+  type GlossMode,
+} from '@/components/MarkdownReader/word-glosses';
+import {
+  lessonWordStats,
   knownStoredWords,
   remainingBaseWords,
   remainingWordKeys,
@@ -291,6 +312,66 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
         lessonWordKeys,
       ),
     [baseForms, lessonWordKeys, readerWordStates, recognizesForms],
+  );
+
+  const [glossMode, setGlossMode] = useState<GlossMode>('off');
+  const showGlosses = glossMode !== 'off';
+  const [glossSources, setGlossSources] = useState<Map<string, string>>(new Map());
+  // Folded word -> dictionary meaning, '' for a word the dictionary lacks.
+  const dictionaryMeaningsRef = useRef(new Map<string, string>());
+
+  useEffect(() => {
+    setGlossMode(parseGlossMode(localStorage.getItem(SETTINGS_KEYS.SHOW_GLOSSES)));
+  }, []);
+
+  const chooseGlossMode = useCallback((mode: GlossMode) => {
+    setGlossMode(mode);
+    localStorage.setItem(SETTINGS_KEYS.SHOW_GLOSSES, mode);
+  }, []);
+
+  useEffect(() => {
+    if (!showGlosses || lessonPack.code !== activeLang.code) return;
+    let cancelled = false;
+    void (async () => {
+      const translations = new Map<string, string>();
+      for (const entry of await getAllVocab()) {
+        if (entry.translation)
+          translations.set(foldWord(entry.text, lessonPack), entry.translation);
+      }
+      const known = dictionaryMeaningsRef.current;
+      const missing = wordsNeedingMeanings(
+        lessonWordKeys,
+        displayedWordStates,
+        translations,
+        baseForms,
+      ).filter((word) => !known.has(word));
+      if (missing.length > 0) {
+        const found = await getVocabMeanings(missing);
+        for (const word of missing) known.set(word, found.get(word) ?? '');
+      }
+      for (const [word, meaning] of known) {
+        if (meaning && !translations.has(word)) translations.set(word, meaning);
+      }
+      if (!cancelled) setGlossSources(translations);
+    })().catch(() => {
+      if (!cancelled) setGlossSources(new Map());
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeLang.code, baseForms, displayedWordStates, lessonPack, lessonWordKeys, showGlosses]);
+
+  const glosses = useMemo(
+    () =>
+      showGlosses
+        ? lessonGlosses(lessonWordKeys, displayedWordStates, glossSources, baseForms)
+        : null,
+    [baseForms, displayedWordStates, glossSources, lessonWordKeys, showGlosses],
+  );
+
+  const wordStats = useMemo(
+    () => lessonWordStats(lessonWordKeys, displayedWordStates, lessonPack),
+    [displayedWordStates, lessonPack, lessonWordKeys],
   );
 
   // The state map and the bulk write both use the active language.
@@ -1457,6 +1538,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
 
   const markRemainingControl = (
     <>
+      <LessonWordStats stats={wordStats} />
       <MarkRemainingKnown count={remainingBases.length} onConfirm={markRemainingKnown} />
       <MarkKnownUnknown count={knownInLesson.length} onConfirm={markKnownUnknown} />
     </>
@@ -1485,10 +1567,44 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
             onSaveText={handleSaveText}
             onEditingChange={handleEditingChange}
             knownWordsMap={displayedWordStates}
+            glosses={glosses}
+            glossPlacement={glossMode === 'side' ? 'side' : 'above'}
             prevLesson={prevLesson}
             nextLesson={nextLesson}
             headerAction={
               <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    title={`Translations of learning words: ${GLOSS_MODE_LABELS[glossMode]}`}
+                    aria-label={`Translations of learning words: ${GLOSS_MODE_LABELS[glossMode]}`}
+                    data-testid="gloss-toggle"
+                    data-gloss-mode={glossMode}
+                    className={`flex items-center gap-1.5 rounded-lg p-2 transition-colors hover:bg-accent ${
+                      showGlosses ? 'text-foreground' : 'text-muted-foreground/60'
+                    }`}
+                  >
+                    <Captions className="h-5 w-5" />
+                    <span className="hidden text-xs sm:inline">
+                      Translations: {GLOSS_MODE_LABELS[glossMode]}
+                    </span>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuRadioGroup
+                      value={glossMode}
+                      onValueChange={(mode) => chooseGlossMode(mode as GlossMode)}
+                    >
+                      {GLOSS_MODES.map((mode) => (
+                        <DropdownMenuRadioItem
+                          key={mode}
+                          value={mode}
+                          data-testid={`gloss-mode-${mode}`}
+                        >
+                          {GLOSS_MODE_MENU_LABELS[mode]}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 {markRemainingControl}
                 {segments.length > 0 && (
                   <button

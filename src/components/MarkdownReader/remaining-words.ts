@@ -81,3 +81,40 @@ export function knownStoredWords(
   }
   return [...stored];
 }
+
+export interface LessonWordStats {
+  known: number;
+  learning: number;
+  new: number;
+  total: number;
+}
+
+/** Counts of the lesson's different words by state. Ignored words and numbers are left out. */
+export function lessonWordStats(
+  keys: string[],
+  states: Map<string, WordState>,
+  pack: LanguageConfig,
+): LessonWordStats {
+  const stats = { known: 0, learning: 0, new: 0, total: 0 };
+  for (const key of keys) {
+    const state = lookupByVocabKeys(states, key, pack);
+    if (state === 'ignored') continue;
+    stats.total += 1;
+    if (state === 'known') stats.known += 1;
+    else if (state === undefined || state === 'new') stats.new += 1;
+    else stats.learning += 1;
+  }
+  return stats;
+}
+
+/** Whole percentages that add up to 100. */
+export function wordStatPercents(stats: LessonWordStats): {
+  known: number;
+  learning: number;
+  new: number;
+} {
+  if (stats.total === 0) return { known: 0, learning: 0, new: 0 };
+  const known = Math.round((stats.known / stats.total) * 100);
+  const learning = Math.min(100 - known, Math.round((stats.learning / stats.total) * 100));
+  return { known, learning, new: 100 - known - learning };
+}

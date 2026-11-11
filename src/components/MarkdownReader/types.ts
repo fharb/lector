@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Lesson, LessonSummary, WordState } from '@/types';
+import type { GlossPlacement } from './word-glosses';
 
 /** Where a clicked word came from, when the lesson is a video transcript
  *  (#334). Threaded to the reader page so a mined card can carry the segment's
@@ -22,6 +23,9 @@ export interface MarkdownReaderProps {
   onSaveText?: (textContent: string) => Promise<void>;
   onEditingChange?: (isEditing: boolean) => void;
   knownWordsMap: Map<string, WordState>;
+  /** Folded word -> translation printed above it. Null or absent when translations are off. */
+  glosses?: Map<string, string> | null;
+  glossPlacement?: GlossPlacement;
   prevLesson?: LessonSummary | null;
   nextLesson?: LessonSummary | null;
   /** Extra header button(s), e.g. the listen-along toggle on audio lessons (#185). */
