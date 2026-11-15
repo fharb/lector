@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react';
 import { makeWordSegmentation, type LanguageConfig } from '@/lib/languages';
 import { speak, stopSpeaking } from '@/lib/tts';
 import { parseSegmentWords } from '@/components/MarkdownReader/utils';
+import type { GlossPlacement } from '@/components/MarkdownReader/word-glosses';
 import type { Lesson, WordState } from '@/types';
 import { lessonSentences } from './sentences';
 import SentencePanel from './SentencePanel';
@@ -24,6 +25,8 @@ export interface SentenceViewProps {
   lesson: Lesson;
   pack: LanguageConfig;
   knownWordsMap: Map<string, WordState>;
+  glosses: Map<string, string> | null;
+  glossPlacement: GlossPlacement;
   onLookUp: (text: string, sentence: string) => void;
   onBack: () => void;
   headerAction?: ReactNode;
@@ -36,6 +39,8 @@ export default function SentenceView({
   lesson,
   pack,
   knownWordsMap,
+  glosses,
+  glossPlacement,
   onLookUp,
   onBack,
   headerAction,
@@ -84,14 +89,17 @@ export default function SentenceView({
           {trailingAction}
         </div>
       </header>
-      <div className="flex flex-1 items-center overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <SentencePanel
+          className="flex-1"
           sentence={sentences[current] ?? ''}
           index={current}
           total={sentences.length}
           pack={pack}
           segmentation={segmentation}
           knownWordsMap={knownWordsMap}
+          glosses={glosses}
+          glossPlacement={glossPlacement}
           playKind="listen"
           onPlay={() => void speak(sentences[current] ?? '')}
           onLookUp={onLookUp}

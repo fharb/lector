@@ -659,12 +659,12 @@ export default function MarkdownReader({
             </p>
           </div>
         ) : transcript ? (
-          <>
+          <div className={sentenceMode ? 'flex h-full flex-col' : undefined}>
             <div
               ref={stickyPlayerRef}
-              className={`sticky top-0 z-10 mx-auto bg-card px-4 pt-4 pb-2 sm:px-8 ${
-                largePlayer ? 'max-w-[46em] sm:max-w-[72em]' : 'max-w-[46em]'
-              }`}
+              className={`sticky top-0 z-10 mx-auto w-full shrink-0 bg-card px-4 pt-4 sm:px-8 ${
+                sentenceMode ? 'pb-0' : 'pb-2'
+              } ${largePlayer ? 'max-w-[46em] sm:max-w-[72em]' : 'max-w-[46em]'}`}
             >
               <div
                 className={
@@ -678,7 +678,9 @@ export default function MarkdownReader({
                   stopAtEnd={sentenceMode}
                 />
               </div>
-              <div className="mt-2 flex items-center justify-between gap-2">
+              <div
+                className={`flex items-center justify-between gap-2 ${sentenceMode ? 'mt-1' : 'mt-2'}`}
+              >
                 <a
                   href={transcript.meta.sourceUrl}
                   target="_blank"
@@ -729,6 +731,8 @@ export default function MarkdownReader({
                 pack={pack}
                 segmentation={segmentation}
                 knownWordsMap={knownWordsMap}
+                glosses={glosses}
+                glossPlacement={placement}
                 parts={
                   sentences[sentenceIndex]
                     ? sentenceParts(transcript.segments, sentences[sentenceIndex])
@@ -752,6 +756,8 @@ export default function MarkdownReader({
                   );
                 }}
                 onGo={playSentence}
+                className="min-h-0 flex-1"
+                sentenceAt="top"
               />
             ) : (
               <TranscriptReader
@@ -775,7 +781,7 @@ export default function MarkdownReader({
                 onSeek={handleSeek}
               />
             )}
-          </>
+          </div>
         ) : (
           <ReaderArticle
             content={lesson.textContent}
@@ -796,7 +802,7 @@ export default function MarkdownReader({
         )}
 
         {/* Prev/Next navigation at bottom */}
-        {!isEditing && (prevLesson || nextLesson) && (
+        {!isEditing && !sentenceMode && (prevLesson || nextLesson) && (
           <div className="mx-auto flex max-w-[38em] items-center justify-between gap-4 px-4 pb-16 sm:px-8 print:hidden">
             {prevLesson ? (
               <button

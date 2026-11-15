@@ -5,6 +5,7 @@ import { apiUrl } from './api';
 // provider.
 
 const COLLECTION = 'E2E Sentence view';
+const TS = '2026-01-01T00:00:00.000Z';
 
 async function openLesson(page: Page, textContent: string) {
   const created = await page.request.post(apiUrl('/api/collections'), {
@@ -36,6 +37,68 @@ test.describe('Sentence view', () => {
         await page.request.delete(apiUrl(`/api/collections/${collection.id}`));
       }
     }
+    const vocab = await (await page.request.get(apiUrl('/api/vocab?language=af'))).json();
+    for (const entry of vocab) {
+      if (String(entry.id).startsWith('sentence-gloss-')) {
+        await page.request.delete(apiUrl(`/api/vocab/${entry.id}`));
+      }
+    }
+  });
+
+  test('shows the translations of learning words above or beside the sentence', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const learning = `sinhond${Date.now().toString(36).replace(/\d/g, '')}`;
+    await page.request.post(apiUrl('/api/vocab'), {
+      data: {
+        id: `sentence-gloss-${learning}`,
+        text: learning,
+        type: 'word',
+        sentence: '',
+        translation: 'dog',
+        state: 'level2',
+        stateUpdatedAt: TS,
+        reviewCount: 0,
+        createdAt: TS,
+        pushedToAnki: false,
+        language: 'af',
+      },
+    });
+    await openLesson(page, `Die ${learning} blaf hard.`);
+    await page.getByTestId('sentence-view-toggle').click();
+    const view = page.getByTestId('sentence-view');
+    const word = view.getByRole('button', { name: `Look up ${learning}`, exact: true });
+
+    await page.getByTestId('gloss-toggle').click();
+    await page.getByTestId('gloss-mode-above').click();
+    await expect(word.locator('rt')).toHaveText('dog');
+
+    await page.getByTestId('gloss-toggle').click();
+    await page.getByTestId('gloss-mode-side').click();
+    await expect(word.locator('rt')).toHaveCount(0);
+    await expect(view.getByTestId('sentence-side-glosses')).toContainText(`${learning} dog`);
+
+    // The list sits to the right, and the sentence stays centred.
+    const text = await view.getByTestId('sentence-text').boundingBox();
+    const side = await view.getByTestId('sentence-side-glosses').boundingBox();
+    const panel = await view.boundingBox();
+    expect(side!.x).toBeGreaterThan(text!.x + text!.width);
+    expect(Math.abs(text!.x + text!.width / 2 - (panel!.x + panel!.width / 2))).toBeLessThan(4);
+  });
+
+  test('the controls stay in place for sentences of different length', async ({ page }) => {
+    await openLesson(
+      page,
+      'Kort. Hierdie sin is heelwat langer as die eerste een en het baie meer woorde in.',
+    );
+    await page.getByTestId('sentence-view-toggle').click();
+    const next = page.getByTestId('sentence-next');
+    const before = await next.boundingBox();
+    await next.click();
+    await expect(page.getByTestId('sentence-position')).toHaveText('2 / 2');
+    const after = await page.getByTestId('sentence-prev').boundingBox();
+    expect(Math.round(after!.y)).toBe(Math.round(before!.y));
   });
 
   test('steps through the sentences, looks up a word and translates a sentence', async ({

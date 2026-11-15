@@ -1832,9 +1832,16 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
             lesson={lesson}
             pack={lessonPack}
             knownWordsMap={displayedWordStates}
+            glosses={glosses}
+            glossPlacement={glossMode === 'side' ? 'side' : 'above'}
             onLookUp={handleWordClick}
             onBack={handleClose}
-            headerAction={markRemainingControl}
+            headerAction={
+              <>
+                {glossMenu}
+                {markRemainingControl}
+              </>
+            }
             trailingAction={sentenceToggle}
           />
         ) : (

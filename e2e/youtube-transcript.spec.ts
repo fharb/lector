@@ -128,6 +128,19 @@ test.describe('YouTube transcript import', () => {
 
     await view.getByTestId('sentence-play').click();
     await expect(player).toHaveAttribute('data-seek-seconds', '0');
+
+    // Under the video, centred on it, and nothing to scroll.
+    const playerBox = await player.boundingBox();
+    const textBox = await view.getByTestId('sentence-text').boundingBox();
+    expect(textBox!.y).toBeGreaterThan(playerBox!.y + playerBox!.height);
+    expect(
+      Math.abs(textBox!.x + textBox!.width / 2 - (playerBox!.x + playerBox!.width / 2)),
+    ).toBeLessThan(4);
+    const scrolls = await view.evaluate((element) => {
+      const scroller = element.closest('.overflow-auto');
+      return scroller ? scroller.scrollHeight > scroller.clientHeight + 1 : false;
+    });
+    expect(scrolls).toBe(false);
     await expect(cues.nth(0)).toHaveAttribute('data-active-cue', 'true');
     await expect(view.locator('[data-active-cue]')).toHaveCount(1);
 
