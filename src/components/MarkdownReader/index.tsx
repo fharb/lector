@@ -19,8 +19,13 @@ import {
   belowStickyScrollTop,
   cueSentence,
   LINES_BELOW_VIDEO,
+  parseTranscript,
+  sentenceAt,
+  sentenceParts,
   transcriptSegmentAt,
+  transcriptSentences,
 } from './transcript-sync';
+import SentencePanel from '@/components/SentenceView/SentencePanel';
 import {
   foldWord,
   getLanguageConfig,
@@ -42,7 +47,6 @@ import { ANNOTATION_MODES, ANNOTATION_MODE_LABELS, type AnnotationMode } from '.
 import { SETTINGS_KEYS } from '@/app/settings/constants';
 import TranscriptReader from './TranscriptReader';
 import YouTubePlayer, { type SeekTarget } from '@/components/YouTubePlayer';
-import type { TranscriptSegment, YouTubeSourceMeta } from '@/types';
 
 // The player keeps reporting the old position until a seek lands.
 const SEEK_SETTLE_MS = 1000;
@@ -60,6 +64,8 @@ export default function MarkdownReader({
   prevLesson,
   nextLesson,
   headerAction,
+  trailingAction,
+  sentenceMode = false,
 }: MarkdownReaderProps) {
   const router = useRouter();
   const activeLang = useActiveLanguage();
@@ -107,17 +113,15 @@ export default function MarkdownReader({
 
   // YouTube transcript lessons (#334): parse the stored segments + provenance.
   // A malformed/empty payload falls back to the ordinary markdown reader.
-  const transcript = useMemo(() => {
-    if (lesson.sourceType !== 'youtube') return null;
-    try {
-      const segments = lesson.segments ? (JSON.parse(lesson.segments) as TranscriptSegment[]) : [];
-      const meta = lesson.sourceMeta ? (JSON.parse(lesson.sourceMeta) as YouTubeSourceMeta) : null;
-      if (!Array.isArray(segments) || segments.length === 0 || !meta?.videoId) return null;
-      return { segments, meta };
-    } catch {
-      return null;
-    }
-  }, [lesson.sourceType, lesson.segments, lesson.sourceMeta]);
+  const transcript = useMemo(
+    () =>
+      parseTranscript({
+        sourceType: lesson.sourceType,
+        segments: lesson.segments,
+        sourceMeta: lesson.sourceMeta,
+      }),
+    [lesson.sourceType, lesson.segments, lesson.sourceMeta],
+  );
 
   const [sideWidth, setSideWidth] = useState<number | null>(null);
   const isTranscript = transcript !== null;
@@ -144,19 +148,52 @@ export default function MarkdownReader({
   const ignoreVideoTimeUntil = useRef(0);
   const stickyPlayerRef = useRef<HTMLDivElement>(null);
 
-  const handleSeek = useCallback((seconds: number, segmentIndex: number) => {
-    seekNonce.current += 1;
-    ignoreVideoTimeUntil.current = Date.now() + SEEK_SETTLE_MS;
-    setSeekTarget({ seconds, nonce: seekNonce.current });
-    setActiveSegmentIndex(segmentIndex);
-  }, []);
+  const sentences = useMemo(
+    () => (transcript ? transcriptSentences(transcript.segments, pack) : []),
+    [pack, transcript],
+  );
+  const [sentenceIndex, setSentenceIndex] = useState(0);
+  /** The sentence played on its own; the video may run into the next sentence's cue meanwhile. */
+  const clipRef = useRef<{ start: number; end: number } | null>(null);
 
   const handleVideoTime = useCallback(
     (seconds: number) => {
       if (!transcript || Date.now() < ignoreVideoTimeUntil.current) return;
       setActiveSegmentIndex(transcriptSegmentAt(transcript.segments, seconds));
+      const clip = clipRef.current;
+      if (clip && seconds >= clip.start - 1 && seconds < clip.end) return;
+      clipRef.current = null;
+      setSentenceIndex(sentenceAt(sentences, seconds));
     },
-    [transcript],
+    [sentences, transcript],
+  );
+
+  const handleSeek = useCallback(
+    (seconds: number, segmentIndex: number) => {
+      seekNonce.current += 1;
+      ignoreVideoTimeUntil.current = Date.now() + SEEK_SETTLE_MS;
+      clipRef.current = null;
+      setSeekTarget({ seconds, nonce: seekNonce.current });
+      setActiveSegmentIndex(segmentIndex);
+      setSentenceIndex(sentenceAt(sentences, seconds));
+    },
+    [sentences],
+  );
+
+  /** Plays the sentence to its end, from its start or from `from` seconds inside it. */
+  const playSentence = useCallback(
+    (index: number, from?: number) => {
+      const sentence = sentences[index];
+      if (!sentence || !transcript) return;
+      const start = from ?? sentence.start;
+      clipRef.current = { start: sentence.start, end: sentence.end };
+      seekNonce.current += 1;
+      ignoreVideoTimeUntil.current = Date.now() + SEEK_SETTLE_MS;
+      setSeekTarget({ seconds: start, end: sentence.end, nonce: seekNonce.current });
+      setActiveSegmentIndex(transcriptSegmentAt(transcript.segments, start) ?? sentence.firstCue);
+      setSentenceIndex(index);
+    },
+    [sentences, transcript],
   );
 
   useEffect(() => {
@@ -498,6 +535,7 @@ export default function MarkdownReader({
                 <SquarePen className="h-5 w-5" />
               </button>
             )}
+            {trailingAction}
           </div>
         )}
       </header>
@@ -552,6 +590,7 @@ export default function MarkdownReader({
                   videoId={transcript.meta.videoId}
                   seekTarget={seekTarget}
                   onTimeUpdate={followVideo ? handleVideoTime : undefined}
+                  stopAtEnd={sentenceMode}
                 />
               </div>
               <div className="mt-2 flex items-center justify-between gap-2">
@@ -597,26 +636,60 @@ export default function MarkdownReader({
                 </div>
               </div>
             </div>
-            <TranscriptReader
-              segments={transcript.segments}
-              sourceUrl={transcript.meta.sourceUrl}
-              pack={pack}
-              prose={prose}
-              segmentation={segmentation}
-              knownWordsMap={knownWordsMap}
-              readings={readings}
-              annotationMode={annotationMode}
-              glosses={glosses}
-              glossPlacement={placement}
-              showTimestamps={showTimestamps}
-              highlightedPhrase={highlightedPhrase}
-              activeWord={activeWord}
-              activeSegmentIndex={activeSegmentIndex}
-              onWordClick={onWordClick}
-              onActivateWord={setActiveWord}
-              onClearPhrase={clearPhraseHighlight}
-              onSeek={handleSeek}
-            />
+            {sentenceMode ? (
+              <SentencePanel
+                sentence={sentences[sentenceIndex]?.text ?? ''}
+                index={sentenceIndex}
+                total={sentences.length}
+                pack={pack}
+                segmentation={segmentation}
+                knownWordsMap={knownWordsMap}
+                parts={
+                  sentences[sentenceIndex]
+                    ? sentenceParts(transcript.segments, sentences[sentenceIndex])
+                    : null
+                }
+                showTimestamps={showTimestamps}
+                activeCue={followVideo ? activeSegmentIndex : null}
+                onPlayFrom={(seconds) => playSentence(sentenceIndex, seconds)}
+                playKind="video"
+                onPlay={() => playSentence(sentenceIndex)}
+                onLookUp={(text, sentence) => {
+                  const timed = sentences[sentenceIndex];
+                  onWordClick(
+                    text,
+                    sentence,
+                    timed && {
+                      sourceUrl: transcript.meta.sourceUrl,
+                      startMs: Math.round(timed.start * 1000),
+                      endMs: Math.round(timed.end * 1000),
+                    },
+                  );
+                }}
+                onGo={playSentence}
+              />
+            ) : (
+              <TranscriptReader
+                segments={transcript.segments}
+                sourceUrl={transcript.meta.sourceUrl}
+                pack={pack}
+                prose={prose}
+                segmentation={segmentation}
+                knownWordsMap={knownWordsMap}
+                readings={readings}
+                annotationMode={annotationMode}
+                glosses={glosses}
+                glossPlacement={placement}
+                showTimestamps={showTimestamps}
+                highlightedPhrase={highlightedPhrase}
+                activeWord={activeWord}
+                activeSegmentIndex={activeSegmentIndex}
+                onWordClick={onWordClick}
+                onActivateWord={setActiveWord}
+                onClearPhrase={clearPhraseHighlight}
+                onSeek={handleSeek}
+              />
+            )}
           </>
         ) : (
           <ReaderArticle

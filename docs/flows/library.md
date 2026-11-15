@@ -66,6 +66,7 @@ sequenceDiagram
 - If `transcriptionStatus` is `error`, the user can retry with `POST /api/lessons/:id/retry-transcription`.
 - If `sourceType` is `youtube`, the reader uses `YouTubePlayer` and `TranscriptReader`.
 - If listen mode is on and audio segments exist, the reader uses `ListenAlong`.
+- In sentence view, a text lesson uses `SentenceView`, and `lessonSentences` splits it into sentences. A YouTube lesson stays in `MarkdownReader` (`sentenceMode`): the player stays, and `SentencePanel` replaces the transcript under it. `transcriptSentences` builds the sentences from the cues, with their time span and character range. Play seeks to the start and pauses at the end. While the video plays, `sentenceAt` picks the sentence. `sentenceParts` cuts it at its cues, each with its timestamp. Both views mark only the cue the video is at (`currentCueClass`). The toggle is the last header button in both views (`trailingAction`).
 - Else the reader uses `ReaderArticle`.
 - The pack is the lesson language, not the UI language.
 - A lesson in CJK stores tokens in `lessons.segmentWords`. The reader uses longest match. If that fails, it uses `Intl.Segmenter`.

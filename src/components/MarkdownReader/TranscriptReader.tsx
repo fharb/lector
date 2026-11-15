@@ -1,8 +1,14 @@
 'use client';
 
-import { cueSentence, paragraphEndIndexes, paragraphGroups } from './transcript-sync';
+import {
+  cueSentence,
+  formatTimestamp,
+  paragraphEndIndexes,
+  paragraphGroups,
+} from './transcript-sync';
 import { sideGlossItems, type GlossPlacement } from './word-glosses';
 import SideGlosses from './SideGlosses';
+import { currentCueClass } from './theme';
 import { Fragment, memo } from 'react';
 import type { LanguageConfig, WordSegmentation } from '@/lib/languages';
 import { foldWord, lookupByVocabKeys } from '@/lib/languages';
@@ -14,16 +20,6 @@ import { wordReading, type AnnotationMode } from './annotation';
 import { readerWrapClass } from './wrap';
 import { proseStyleVars, type ProseStyle } from '@/lib/prose-style';
 import WordCell from '@/components/WordCell';
-
-/** mm:ss / h:mm:ss label for a second offset (mirrors the server helper). */
-function formatTimestamp(totalSeconds: number): string {
-  const s = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(s / 3600);
-  const minutes = Math.floor((s % 3600) / 60);
-  const seconds = s % 60;
-  const two = (n: number) => String(n).padStart(2, '0');
-  return hours > 0 ? `${hours}:${two(minutes)}:${two(seconds)}` : `${minutes}:${two(seconds)}`;
-}
 
 interface TranscriptReaderProps {
   segments: TranscriptSegment[];
@@ -105,10 +101,8 @@ function TranscriptReader({
         data-testid="transcript-segment"
         data-segment-index={segmentIndex}
         data-active-segment={activeSegmentIndex === segmentIndex || undefined}
-        className={`inline rounded box-decoration-clone transition-colors ${
-          activeSegmentIndex === segmentIndex
-            ? 'bg-[color-mix(in_srgb,var(--clay)_38%,transparent)] shadow-[0_0_0_2px_var(--clay)]'
-            : ''
+        className={`inline transition-colors ${
+          activeSegmentIndex === segmentIndex ? currentCueClass : ''
         }`}
       >
         {showTimestamps && (

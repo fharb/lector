@@ -6,7 +6,11 @@ import {
   cueSentence,
   paragraphEndIndexes,
   paragraphGroups,
+  parseTranscript,
+  sentenceAt,
+  sentenceParts,
   transcriptSegmentAt,
+  transcriptSentences,
 } from './transcript-sync';
 
 const SEGMENTS: TranscriptSegment[] = [
@@ -127,5 +131,88 @@ describe('paragraphGroups', () => {
 
   it('returns no groups for no cues', () => {
     expect(paragraphGroups(0, new Set())).toEqual([]);
+  });
+});
+
+describe('transcriptSentences', () => {
+  const af = LANGUAGES.af;
+  const cue = (start: number, text: string): TranscriptSegment => ({ start, end: start + 2, text });
+
+  it('gives each sentence the time span of the cues it covers', () => {
+    expect(
+      transcriptSentences(
+        [cue(0, 'Die kat slaap'), cue(2, 'lekker. Die hond'), cue(4, 'blaf hard!')],
+        af,
+      ),
+    ).toEqual([
+      { text: 'Die kat slaap lekker.', start: 0, end: 4, firstCue: 0, lastCue: 1, from: 0, to: 7 },
+      { text: 'Die hond blaf hard!', start: 2, end: 6, firstCue: 1, lastCue: 2, from: 8, to: 10 },
+    ]);
+  });
+
+  it('cuts a long sentence without punctuation at cue boundaries', () => {
+    const cues = Array.from({ length: 12 }, (_, i) => cue(i * 2, `woord${i} `.repeat(4).trim()));
+    const sentences = transcriptSentences(cues, af);
+    expect(sentences.length).toBeGreaterThan(1);
+    for (const sentence of sentences) expect(sentence.text.length).toBeLessThanOrEqual(200);
+    expect(sentences[0].start).toBe(0);
+    expect(sentences.at(-1)!.end).toBe(24);
+    expect(sentences.map((s) => s.text).join(' ')).toBe(cues.map((c) => c.text).join(' '));
+  });
+
+  it('returns nothing for no cues', () => {
+    expect(transcriptSentences([], af)).toEqual([]);
+  });
+});
+
+describe('parseTranscript', () => {
+  const meta = JSON.stringify({ videoId: 'abc' });
+  const segments = JSON.stringify([{ start: 0, end: 1, text: 'Hallo' }]);
+
+  it('reads a YouTube lesson and refuses anything else', () => {
+    expect(
+      parseTranscript({ sourceType: 'youtube', segments, sourceMeta: meta })?.meta.videoId,
+    ).toBe('abc');
+    expect(parseTranscript({ sourceType: null, segments, sourceMeta: meta })).toBeNull();
+    expect(parseTranscript({ sourceType: 'youtube', segments: '[]', sourceMeta: meta })).toBeNull();
+    expect(
+      parseTranscript({ sourceType: 'youtube', segments: '{bad', sourceMeta: meta }),
+    ).toBeNull();
+  });
+});
+
+describe('sentenceAt', () => {
+  const sentences = [{ start: 0 }, { start: 2 }, { start: 7 }];
+
+  it('is the last sentence that has started', () => {
+    expect(sentenceAt(sentences, 0)).toBe(0);
+    expect(sentenceAt(sentences, 2)).toBe(1);
+    expect(sentenceAt(sentences, 6.9)).toBe(1);
+    expect(sentenceAt(sentences, 99)).toBe(2);
+  });
+
+  it('is the first sentence before any start, and 0 without sentences', () => {
+    expect(sentenceAt([{ start: 3 }], 1)).toBe(0);
+    expect(sentenceAt([], 5)).toBe(0);
+  });
+});
+
+describe('sentenceParts', () => {
+  const cues: TranscriptSegment[] = [
+    { start: 0, end: 2, text: 'Die kat slaap' },
+    { start: 2, end: 4, text: 'lekker. Die hond' },
+    { start: 4, end: 6, text: 'blaf hard!' },
+  ];
+
+  it('cuts a sentence at its cue boundaries, with each cue start', () => {
+    const [first, second] = transcriptSentences(cues, LANGUAGES.af);
+    expect(sentenceParts(cues, first)).toEqual([
+      { cue: 0, start: 0, text: 'Die kat slaap' },
+      { cue: 1, start: 2, text: 'lekker.' },
+    ]);
+    expect(sentenceParts(cues, second)).toEqual([
+      { cue: 1, start: 2, text: 'Die hond' },
+      { cue: 2, start: 4, text: 'blaf hard!' },
+    ]);
   });
 });

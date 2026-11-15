@@ -96,6 +96,56 @@ test.describe('YouTube transcript import', () => {
     await expect(page.getByTestId('translation-drawer')).toBeVisible();
   });
 
+  test('sentence view keeps the video, shows cue timestamps, and marks only the current cue', async ({
+    page,
+  }) => {
+    const res = await page.request.post(apiUrl('/api/import/youtube'), {
+      data: { url: VIDEO_URL, languageCode: 'af', kind: 'standard', language: 'af' },
+    });
+    expect(res.ok()).toBeTruthy();
+    const { lessonId } = await res.json();
+
+    await page.goto(`/read/${lessonId}`);
+    await expect(page.getByTestId('transcript-reader')).toBeVisible({ timeout: 15000 });
+
+    const player = page.getByTestId('yt-player');
+    await player.evaluate((element) => element.setAttribute('data-e2e-same', '1'));
+    await page.getByTestId('sentence-view-toggle').click();
+
+    // The same player stays; only the text below it changes.
+    await expect(player).toHaveAttribute('data-e2e-same', '1');
+    await expect(page.getByTestId('transcript-reader')).toHaveCount(0);
+    const view = page.getByTestId('sentence-view');
+    await expect(view.getByTestId('sentence-listen')).toHaveCount(0);
+
+    // The sentence keeps its subtitle cues, each with its timestamp.
+    const cues = view.getByTestId('sentence-cue');
+    await expect(view.getByTestId('sentence-cue-timestamp')).toHaveText(['0:00', '0:03', '0:07']);
+    await view.getByTestId('sentence-cue-timestamp').nth(1).click();
+    await expect(player).toHaveAttribute('data-seek-seconds', '3');
+    await expect(view.locator('[data-active-cue]')).toHaveCount(1);
+    await expect(cues.nth(1)).toHaveAttribute('data-active-cue', 'true');
+
+    await view.getByTestId('sentence-play').click();
+    await expect(player).toHaveAttribute('data-seek-seconds', '0');
+    await expect(cues.nth(0)).toHaveAttribute('data-active-cue', 'true');
+    await expect(view.locator('[data-active-cue]')).toHaveCount(1);
+
+    // The transcript's own switches apply here too.
+    await page.getByTestId('transcript-timestamps-toggle').click();
+    await expect(view.getByTestId('sentence-cue-timestamp')).toHaveCount(0);
+    await expect(view.getByTestId('sentence-text')).toHaveText(
+      'Eendag was daar n dogtertjie met die rooi kappie Sy loop deur die woud',
+    );
+
+    await view.getByRole('button', { name: 'Look up dogtertjie', exact: true }).click();
+    await expect(page.getByTestId('translation-drawer')).toHaveAttribute('aria-hidden', 'false');
+
+    await page.getByTestId('sentence-view-toggle').click();
+    await expect(page.getByTestId('transcript-reader')).toBeVisible();
+    await expect(player).toHaveAttribute('data-e2e-same', '1');
+  });
+
   test('a clicked word gets the sentence across neighbouring cues', async ({ page }) => {
     const res = await page.request.post(apiUrl('/api/import/youtube'), {
       data: { url: VIDEO_URL, languageCode: 'af', kind: 'standard', language: 'af' },

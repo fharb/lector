@@ -20,6 +20,10 @@ export interface MarkdownReaderProps {
    *  (Esc, the X, clicking away) the reader clears its word/phrase highlight. */
   wordPanelOpen?: boolean;
   onClose: () => void;
+  /** A YouTube lesson shows one sentence under its player instead of the whole transcript. */
+  sentenceMode?: boolean;
+  /** The last header control, after the edit button. */
+  trailingAction?: ReactNode;
   onSaveText?: (textContent: string) => Promise<void>;
   onEditingChange?: (isEditing: boolean) => void;
   knownWordsMap: Map<string, WordState>;

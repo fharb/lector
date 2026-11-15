@@ -1,5 +1,6 @@
 export interface YouTubeApiPlayer {
   getCurrentTime(): number;
+  pauseVideo(): void;
 }
 
 interface YouTubeApi {

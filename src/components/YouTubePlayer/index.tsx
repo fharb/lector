@@ -10,6 +10,8 @@ const POSITION_POLL_MS = 250;
 export interface SeekTarget {
   seconds: number;
   nonce: number;
+  /** Pause here. Needs YouTube's `iframe_api` script for the position; without it the video plays on. */
+  end?: number;
 }
 
 interface YouTubePlayerProps {
@@ -17,6 +19,8 @@ interface YouTubePlayerProps {
   seekTarget: SeekTarget | null;
   /** Called with seconds from the video start, only when the position changes. */
   onTimeUpdate?: (seconds: number) => void;
+  /** False drops a pending `end` pause, so the video plays on. */
+  stopAtEnd?: boolean;
 }
 
 /**
@@ -29,9 +33,19 @@ interface YouTubePlayerProps {
  * assert that a transcript click drove the player without reaching across the
  * cross-origin iframe boundary.
  */
-export default function YouTubePlayer({ videoId, seekTarget, onTimeUpdate }: YouTubePlayerProps) {
+export default function YouTubePlayer({
+  videoId,
+  seekTarget,
+  onTimeUpdate,
+  stopAtEnd = true,
+}: YouTubePlayerProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const onTimeUpdateRef = useRef(onTimeUpdate);
+  const pauseAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!stopAtEnd) pauseAtRef.current = null;
+  }, [stopAtEnd]);
 
   useEffect(() => {
     onTimeUpdateRef.current = onTimeUpdate;
@@ -56,6 +70,10 @@ export default function YouTubePlayer({ videoId, seekTarget, onTimeUpdate }: You
                 const seconds = player.getCurrentTime();
                 if (seconds === lastSeconds) return;
                 lastSeconds = seconds;
+                if (pauseAtRef.current !== null && seconds >= pauseAtRef.current) {
+                  pauseAtRef.current = null;
+                  player.pauseVideo();
+                }
                 onTimeUpdateRef.current?.(seconds);
               }, POSITION_POLL_MS);
             },
@@ -75,6 +93,7 @@ export default function YouTubePlayer({ videoId, seekTarget, onTimeUpdate }: You
     const win = iframeRef.current.contentWindow;
     const command = (func: string, args: unknown[]) =>
       win.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
+    pauseAtRef.current = seekTarget.end ?? null;
     // Seek, then play — matches YouTube's own "click a chapter" behaviour.
     command('seekTo', [Math.max(0, seekTarget.seconds), true]);
     command('playVideo', []);

@@ -64,7 +64,8 @@ import {
   withoutStress,
 } from '@/lib/languages';
 import { toast } from 'sonner';
-import { Captions, Headphones, LoaderCircle } from 'lucide-react';
+import { Captions, Headphones, LoaderCircle, TextQuote } from 'lucide-react';
+import SentenceView from '@/components/SentenceView';
 import { SETTINGS_KEYS } from '@/app/settings/constants';
 import { v4 as uuidv4 } from 'uuid';
 import { WordPanelState } from '../types';
@@ -125,6 +126,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   // Listen-along (#185): the audio lesson's transcript segments + mode toggle.
   const [segments, setSegments] = useState<AudioTranscriptSegment[]>([]);
   const [listenMode, setListenMode] = useState(false);
+  const [sentenceMode, setSentenceMode] = useState(false);
   const [readerWordStates, setReaderWordStates] = useState<Map<string, WordState>>(new Map());
   const readerWordStatesRef = useRef(readerWordStates);
   const [baseForms, setBaseForms] = useState<Map<string, string[]>>(new Map());
@@ -1544,6 +1546,21 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     </>
   );
 
+  const sentenceToggle = (!lesson.sourceType || lesson.sourceType === 'youtube') && (
+    <button
+      onClick={() => setSentenceMode((on) => !on)}
+      title={sentenceMode ? 'Whole text' : 'Sentence view'}
+      aria-label="Sentence view"
+      aria-pressed={sentenceMode}
+      data-testid="sentence-view-toggle"
+      className={`rounded-lg p-2 transition-colors hover:bg-accent ${
+        sentenceMode ? 'bg-accent text-foreground' : 'text-muted-foreground'
+      }`}
+    >
+      <TextQuote className="h-5 w-5" />
+    </button>
+  );
+
   return (
     <div className="flex h-dvh flex-col overflow-x-hidden bg-card 2xl:flex-row print:block print:h-auto print:overflow-visible">
       <div className="relative min-h-0 flex-1 overflow-hidden print:block print:h-auto print:overflow-visible">
@@ -1558,12 +1575,25 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
             onExit={() => setListenMode(false)}
             headerAction={markRemainingControl}
           />
+        ) : sentenceMode && lesson.sourceType !== 'youtube' ? (
+          <SentenceView
+            key={lesson.id}
+            lesson={lesson}
+            pack={lessonPack}
+            knownWordsMap={displayedWordStates}
+            onLookUp={handleWordClick}
+            onBack={handleClose}
+            headerAction={markRemainingControl}
+            trailingAction={sentenceToggle}
+          />
         ) : (
           <MarkdownReader
             lesson={lesson}
             onWordClick={handleWordClick}
             wordPanelOpen={wordPanel.isOpen}
             onClose={handleClose}
+            trailingAction={sentenceToggle}
+            sentenceMode={sentenceMode}
             onSaveText={handleSaveText}
             onEditingChange={handleEditingChange}
             knownWordsMap={displayedWordStates}
