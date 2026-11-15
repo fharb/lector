@@ -155,7 +155,7 @@
   N("flow:import", "flow", "Import", {
     domain: "library",
     md: "library.md#import",
-    summary: "EPUB, paste, markdown, web URL, YouTube captions, or audio. Destination group is importGroupId.",
+    summary: "EPUB, PDF, paste, markdown, web URL, YouTube captions, or audio. Destination group is importGroupId.",
     steps: [
       "file:home-page",
       "fn:importEpub",
@@ -238,7 +238,7 @@
   N("flow:mark-remaining-known", "flow", "Mark remaining as known", {
     domain: "vocabulary",
     md: "vocabulary.md#mark-remaining-as-known",
-    summary: "Reader control. Confirm the count of new words. Marks them known or ignored. Writes knownWords only.",
+    summary: "Reader control. Confirm the count of new words. Marks them known or ignored, for the lesson or one PDF page. Writes knownWords only.",
     steps: ["file:mark-remaining-known", "fn:markRemainingKnown", "fn:remainingWordKeys", "fn:patchWordStates", "route:known-words-post", "table:knownWords"],
   });
   N("flow:known-word-import", "flow", "Known-word import", {
@@ -573,6 +573,8 @@
   N("file:epub-parser", "file", "epub-parser.ts", { path: "api/src/lib/epub-parser.ts", domain: "library" });
   N("file:html-to-markdown", "file", "html-to-markdown.ts", { path: "api/src/lib/html-to-markdown.ts", domain: "library" });
   N("file:transcribe-worker", "file", "transcribe-worker.ts", { path: "api/src/lib/transcribe-worker.ts", domain: "listen" });
+  N("file:pdf-worker", "file", "pdf-worker.ts", { path: "api/src/lib/pdf-worker.ts", domain: "library" });
+  N("file:pdf-reader", "file", "PdfReader", { path: "src/components/PdfReader/index.tsx", domain: "library" });
   N("file:classify-worker", "file", "classify-worker.ts", { path: "api/src/lib/classify-worker.ts", domain: "stats" });
   N("file:word-classifier", "file", "word-classifier.ts", { path: "api/src/lib/word-classifier.ts", domain: "stats" });
   N("file:domains-lib", "file", "domains.ts", { path: "api/src/lib/domains.ts", domain: "stats" });
@@ -623,6 +625,7 @@
   N("fn:updateVocabState", "fn", "updateVocabState", { path: "src/lib/data-layer.ts" });
   N("fn:updateLessonProgress", "fn", "updateLessonProgress", { path: "src/lib/data-layer.ts" });
   N("fn:importEpub", "fn", "importEpub", { path: "src/lib/data-layer.ts" });
+  N("fn:importPdf", "fn", "importPdf", { path: "src/lib/data-layer.ts" });
   N("fn:createStandaloneLesson", "fn", "createStandaloneLesson", { path: "src/lib/data-layer.ts" });
   N("fn:parseEpub", "fn", "parseEpub", { path: "api/src/lib/epub-parser.ts" });
   N("fn:buildSegmentWords", "fn", "buildSegmentWords", { path: "api/src/lib/html-to-markdown.ts" });
@@ -695,6 +698,9 @@
   N("route:known-words-remove", "route", "POST /api/known-words/remove", { path: "api/src/routes/known-words.ts" });
   N("route:import-epub", "route", "POST /api/import/epub", { path: "api/src/routes/import.ts" });
   N("route:import-audio", "route", "POST /api/import/audio", { path: "api/src/routes/import.ts" });
+  N("route:import-pdf", "route", "POST /api/import/pdf", { path: "api/src/routes/import.ts" });
+  N("route:lessons-pdf", "route", "GET /api/lessons/:id/pdf", { path: "api/src/routes/lessons.ts" });
+  N("route:lessons-retry-pdf", "route", "POST /api/lessons/:id/retry-pdf", { path: "api/src/routes/lessons.ts" });
   N("route:extract-url", "route", "POST /api/extract-url", { path: "api/src/routes/extract-url.ts" });
   N("route:youtube-resolve", "route", "POST /api/import/youtube/resolve", { path: "api/src/routes/youtube-import.ts" });
   N("route:youtube-import", "route", "POST /api/import/youtube", { path: "api/src/routes/youtube-import.ts" });
@@ -948,6 +954,14 @@
   edge("flow:import", "route:import-audio", "http");
   edge("route:import-audio", "file:transcribe-worker", "then");
   edge("file:transcribe-worker", "table:transcript_segments", "writes");
+  edge("flow:import", "fn:importPdf", "calls");
+  edge("fn:importPdf", "file:data-layer", "in");
+  edge("fn:importPdf", "route:import-pdf", "http");
+  edge("route:import-pdf", "file:route-import", "in");
+  edge("route:import-pdf", "file:pdf-worker", "then");
+  edge("file:pdf-worker", "table:lessons", "writes");
+  edge("file:pdf-reader", "route:lessons-pdf", "http");
+  edge("file:pdf-reader", "route:lessons-retry-pdf", "http");
   edge("file:home-page", "file:web-import", "opens");
   edge("file:home-page", "file:youtube-import", "opens");
   edge("file:home-page", "file:paste-import", "opens");

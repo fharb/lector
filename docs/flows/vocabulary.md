@@ -84,7 +84,8 @@ The collector reads paragraphs and list items only, because `ReaderArticle` make
 | Role | Path | Function |
 | --- | --- | --- |
 | UI | `src/components/MarkRemainingKnown/index.tsx` | `MarkRemainingKnown` |
-| Reader | `src/app/read/[bookId]/page.tsx` | `markRemainingKnown`, `ignoreRemaining`, `setWordsState` |
+| Reader | `src/app/read/[bookId]/page.tsx` | `markRemainingKnown`, `ignoreRemaining`, `setWordsState`, `pageWordAction` |
+| PDF page | `src/components/PdfReader/PageWordActions.tsx` | `PageWordActions` |
 | Collect | `src/components/MarkdownReader/remaining-words.ts` | `tappableMarkdownText`, `uniqueWordKeys`, `remainingWordKeys` |
 | Optimistic map | `src/components/MarkdownReader/optimistic-word-state.ts` | `patchWordStates` |
 | Client | `src/lib/data-layer.ts` | `bulkUpdateWordStates` |
@@ -93,6 +94,8 @@ The collector reads paragraphs and list items only, because `ReaderArticle` make
 A failed write restores the earlier colours. On success, `dailyStats.wordsMarkedKnown` grows by the word count.
 
 `Ignore remaining words` beside it collects the same words and writes the state `ignored`. It adds nothing to `dailyStats`. Both go through `setWordsState`.
+
+In the PDF reader, `PageWordActions` does the same for the page that the page counter shows. It collects the words of that page from its layout with `remainingPageWords`, which drops numbers and maps forms to base words.
 
 Tests: `e2e/reader-mark-remaining-known.spec.ts`.
 

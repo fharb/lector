@@ -15,8 +15,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import ListenAlong from '@/components/ListenAlong';
+import PdfReader, { PdfStatusScreen } from '@/components/PdfReader';
+import { pdfInProgress } from '@/components/PdfReader/status';
 import MarkKnownUnknown from '@/components/MarkKnownUnknown';
 import MarkRemainingKnown, { type BulkWordTarget } from '@/components/MarkRemainingKnown';
+import PageWordActions from '@/components/PdfReader/PageWordActions';
 import LessonWordStats from '@/components/LessonWordStats';
 import {
   type Lesson,
@@ -32,6 +35,7 @@ import {
   getLessonSegments,
   lessonAudioUrl,
   retryTranscription,
+  retryPdf,
   getKnownWordsMap,
   getAllVocab,
   getVocabMeanings,
@@ -98,6 +102,7 @@ import {
   lessonWordStats,
   knownStoredWords,
   remainingBaseWords,
+  remainingPageWords,
   remainingWordKeys,
   tappableMarkdownText,
   uniqueWordKeys,
@@ -261,6 +266,37 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     return () => clearInterval(timer);
   }, [lessonId, transcriptionStatus]);
 
+  // PDF lesson: poll while the worker runs, so the status line moves and the pages open by themselves.
+  const pdfStatus = lesson?.pdfStatus ?? null;
+  const pdfWorking = pdfInProgress(pdfStatus);
+  const collectionOfLesson = lesson?.collectionId ?? null;
+  useEffect(() => {
+    if (!pdfWorking) return;
+    const timer = setInterval(async () => {
+      try {
+        const updated = await getLesson(lessonId);
+        if (!updated) return;
+        setLesson((previous) => (previous?.pdfStatus === updated.pdfStatus ? previous : updated));
+        if (!pdfInProgress(updated.pdfStatus) && collectionOfLesson) {
+          setSiblings(await getLessonsForCollection(collectionOfLesson));
+        }
+      } catch {
+        /* transient — next tick retries */
+      }
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [collectionOfLesson, lessonId, pdfWorking]);
+
+  async function handleRetryPdf() {
+    try {
+      await retryPdf(lessonId);
+      const updated = await getLesson(lessonId);
+      if (updated) setLesson(updated);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not retry the PDF import');
+    }
+  }
+
   async function handleRetryTranscription() {
     try {
       await retryTranscription(lessonId);
@@ -296,7 +332,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   const lessonWordKeys = useMemo(() => {
     if (!lesson) return [];
     const texts =
-      lesson.sourceType === 'youtube'
+      lesson.sourceType === 'youtube' || lesson.sourceType === 'pdf'
         ? [lesson.textContent]
         : tappableMarkdownText(lesson.textContent);
     return uniqueWordKeys(texts, lessonPack, segmentation);
@@ -831,6 +867,30 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
       .join(',');
     return `${selectors}{outline:2px solid var(--ring);outline-offset:1px;border-radius:4px}`;
   }, [pickedWords]);
+
+  const pageWordAction = useCallback(
+    (page: number, words: string[] | null) => {
+      const remaining =
+        words && sameLanguage
+          ? remainingPageWords(
+              words,
+              displayedWordStates,
+              recognizesForms ? baseForms : new Map(),
+              lessonPack,
+            )
+          : null;
+      return (
+        <PageWordActions
+          page={page}
+          count={remaining ? remaining.length : null}
+          onConfirm={(target) => {
+            if (remaining) void setWordsState(remaining, target);
+          }}
+        />
+      );
+    },
+    [baseForms, displayedWordStates, lessonPack, recognizesForms, sameLanguage, setWordsState],
+  );
 
   // Nested lookup from inside the drawer (issue #106) — e.g. clicking "vrug"
   // in the gloss "plural of vrug". Re-targets the drawer like a reader word
@@ -1580,6 +1640,12 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     );
   }
 
+  if (pdfInProgress(lesson.pdfStatus) || lesson.pdfStatus === 'failed') {
+    return (
+      <PdfStatusScreen lesson={lesson} onRetry={handleRetryPdf} onBack={() => router.push('/')} />
+    );
+  }
+
   // Audio lesson still transcribing (#185): there's no text yet, so hold the
   // reader with a status screen; the poll above unlocks it when the job lands.
   if (lesson.transcriptionStatus === 'pending' || lesson.transcriptionStatus === 'processing') {
@@ -1716,7 +1782,9 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
         >
           {GLOSS_MODES.map((mode) => (
             <DropdownMenuRadioItem key={mode} value={mode} data-testid={`gloss-mode-${mode}`}>
-              {GLOSS_MODE_MENU_LABELS[mode]}
+              {lesson.sourceType === 'pdf' && mode === 'above'
+                ? 'On hover'
+                : GLOSS_MODE_MENU_LABELS[mode]}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
@@ -1727,7 +1795,27 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   return (
     <div className="flex h-dvh flex-col overflow-x-hidden bg-card 2xl:flex-row print:block print:h-auto print:overflow-visible">
       <div className="relative min-h-0 flex-1 overflow-hidden print:block print:h-auto print:overflow-visible">
-        {listenMode && segments.length > 0 ? (
+        {lesson.sourceType === 'pdf' && lesson.pdfStatus === 'ready' ? (
+          <PdfReader
+            key={lesson.id}
+            lesson={lesson}
+            pageAction={pageWordAction}
+            pack={lessonPack}
+            knownWordsMap={displayedWordStates}
+            glosses={glosses}
+            glossMode={glossMode}
+            wordPanelOpen={wordPanel.isOpen}
+            onWordClick={handleWordClick}
+            onClose={handleClose}
+            onDismissSelection={dismissSelection}
+            headerAction={
+              <>
+                {glossMenu}
+                {markRemainingControl}
+              </>
+            }
+          />
+        ) : listenMode && segments.length > 0 ? (
           <ListenAlong
             lesson={lesson}
             segments={segments}

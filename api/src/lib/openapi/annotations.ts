@@ -118,6 +118,12 @@ const ISO_DATE_TIME: JsonSchema = { type: 'string', format: 'date-time' };
 const ISO_DATE: JsonSchema = { type: 'string', description: 'Calendar date, `YYYY-MM-DD`.' };
 const NULLABLE_STRING: JsonSchema = { type: ['string', 'null'] };
 
+const PDF_STATUS: JsonSchema = {
+  type: ['string', 'null'],
+  enum: ['pending', 'processing', 'ready', 'failed', null],
+  description: 'State of the PDF job. Null for a lesson that did not come from a PDF.',
+};
+
 const WORD_STATE: JsonSchema = {
   type: 'string',
   enum: ['new', 'level1', 'level2', 'level3', 'level4', 'known', 'ignored'],
@@ -264,6 +270,8 @@ export const schemas: Record<string, JsonSchema> = {
       },
       transcriptionError: NULLABLE_STRING,
       transcriptionAttempts: { type: 'integer' },
+      pdfStatus: PDF_STATUS,
+      pdfError: NULLABLE_STRING,
       createdAt: ISO_DATE_TIME,
       lastReadAt: ISO_DATE_TIME,
     },
@@ -288,6 +296,9 @@ export const schemas: Record<string, JsonSchema> = {
         enum: ['pending', 'processing', 'done', 'error', null],
       },
       transcriptionError: NULLABLE_STRING,
+      sourceType: NULLABLE_STRING,
+      pdfStatus: PDF_STATUS,
+      pdfError: NULLABLE_STRING,
       createdAt: ISO_DATE_TIME,
       lastReadAt: ISO_DATE_TIME,
     },
@@ -915,6 +926,36 @@ const libraryOps: Record<string, OperationDoc> = {
       },
     },
   },
+  'GET /api/lessons/{id}/pdf': {
+    notFound: 'The lesson has no PDF, or the stored file is gone.',
+    summary: 'Stream the PDF of a lesson',
+    description:
+      'Serves the PDF file of a page lesson. The endpoint honours the `Range` header and answers `206` with `Content-Range`, so a viewer can load single pages.',
+    tag: 'Library',
+    sharedParams: LANG,
+    pathParams: { id: 'Lesson identifier.' },
+    responses: {
+      '200': {
+        description: 'The complete PDF file.',
+        contentType: 'application/pdf',
+        schema: { type: 'string', format: 'binary' },
+      },
+      '206': {
+        description: 'The requested byte range.',
+        contentType: 'application/pdf',
+        schema: { type: 'string', format: 'binary' },
+      },
+    },
+  },
+  'POST /api/lessons/{id}/retry-pdf': {
+    notFound: 'No such lesson, or its PDF job did not fail.',
+    summary: 'Retry a failed PDF import',
+    description: 'Puts a failed PDF lesson back in the queue for text extraction.',
+    tag: 'Library',
+    sharedParams: LANG,
+    pathParams: { id: 'Lesson identifier.' },
+    responses: { '200': { description: 'The lesson is queued again.', schema: ref('Success') } },
+  },
   'POST /api/lessons/{id}/retry-transcription': {
     notFound: 'No such lesson, or its transcription did not fail.',
     summary: 'Retry a failed transcription',
@@ -989,6 +1030,47 @@ const importOps: Record<string, OperationDoc> = {
             title: { type: 'string' },
             audioDurationMs: { type: ['integer', 'null'] },
             transcriptionStatus: { type: 'string', enum: ['pending'] },
+          },
+        },
+      },
+    },
+  },
+  'POST /api/import/pdf': {
+    summary: 'Import a PDF',
+    description:
+      'Stores the PDF and creates a pending lesson. A background worker reads the text of each page, so poll the lesson for `pdfStatus`. A PDF without text, such as a scan, fails with an error. Mode `pages` keeps the PDF and shows its pages. Mode `text` turns the text into ordinary lessons and deletes the PDF.',
+    tag: 'Import',
+    requestBody: {
+      contentType: 'multipart/form-data',
+      required: true,
+      schema: {
+        type: 'object',
+        properties: {
+          file: { type: 'string', format: 'binary', description: 'The PDF file.' },
+          mode: { type: 'string', enum: ['pages', 'text'], default: 'pages' },
+          title: { type: 'string' },
+          language: { type: 'string' },
+          groupId: { type: 'string' },
+          outline: {
+            type: 'string',
+            description:
+              'Mode `text` only. JSON array of `{ title, page }`, with 1-based pages. Each entry starts a lesson. Without it, each lesson holds 10 pages.',
+          },
+        },
+        required: ['file'],
+      },
+    },
+    responses: {
+      '200': {
+        description: 'The PDF is stored and queued.',
+        schema: {
+          type: 'object',
+          properties: {
+            collectionId: { type: 'string' },
+            lessonId: { type: 'string' },
+            title: { type: 'string' },
+            mode: { type: 'string', enum: ['pages', 'text'] },
+            pdfStatus: { type: 'string', enum: ['pending'] },
           },
         },
       },

@@ -5,6 +5,7 @@ import {
   knownStoredWords,
   lessonWordStats,
   remainingBaseWords,
+  remainingPageWords,
   remainingWordKeys,
   tappableMarkdownText,
   uniqueWordKeys,
@@ -172,5 +173,31 @@ describe('wordStatPercents', () => {
 
   it('gives 100 known when every word is known', () => {
     expect(wordStatPercents({ known: 4, learning: 0, new: 0, total: 4 }).known).toBe(100);
+  });
+});
+
+describe('remainingPageWords', () => {
+  const ru = getLanguageConfig('ru');
+
+  it('keeps the new words of the page once, without numbers, as base words', () => {
+    const states = new Map<string, WordState>([
+      ['кровь', 'known'],
+      ['орган', 'level2'],
+      ['сосуд', 'ignored'],
+    ]);
+    const baseForms = new Map([['сердца', ['сердце']]]);
+    expect(
+      remainingPageWords(
+        ['Сердца', 'сердца', 'кровь', 'Орган', 'сосуд', '1500', 'насос'],
+        states,
+        baseForms,
+        ru,
+      ),
+    ).toEqual(['сердце', 'насос']);
+  });
+
+  it('is empty for a page without new words', () => {
+    expect(remainingPageWords([], new Map(), new Map(), ru)).toEqual([]);
+    expect(remainingPageWords(['кровь'], new Map([['кровь', 'known']]), new Map(), ru)).toEqual([]);
   });
 });

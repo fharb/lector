@@ -13,6 +13,7 @@ import { getAuthEngine, runAuthMigrations, resolveTrustedOrigins } from './lib/a
 import { HTTPException } from 'hono/http-exception';
 import { startClassifyWorker } from './lib/classify-worker';
 import { startTranscribeWorker } from './lib/transcribe-worker';
+import { startPdfWorker } from './lib/pdf-worker';
 import { startDictWorker } from './lib/dict-worker';
 import { startLifecycleEmailWorker } from './lib/lifecycle-email';
 import { closeWarmQueries } from './lib/llm/warm-queries';
@@ -188,6 +189,9 @@ startClassifyWorker();
 // TRANSCRIBE_WORKER=1 — same opt-in shape as the classifier, so it never runs
 // under test/e2e.
 startTranscribeWorker();
+
+// PDF import: text extraction. On unless PDF_WORKER=0.
+startPdfWorker();
 
 // Runtime dictionary fetch (#438). The image ships no databases, so this loop
 // downloads the ones DICT_LANGS and the opted-in accounts ask for. It runs

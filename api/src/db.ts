@@ -628,6 +628,11 @@ function getDb(): Database {
   if (!lessonAudioCols.some((c) => c.name === 'transcriptionAttempts')) {
     _db.exec('ALTER TABLE lessons ADD COLUMN transcriptionAttempts INTEGER NOT NULL DEFAULT 0');
   }
+  for (const name of ['pdfStatus', 'pdfError']) {
+    if (!lessonAudioCols.some((c) => c.name === name)) {
+      _db.exec(`ALTER TABLE lessons ADD COLUMN ${name} TEXT`);
+    }
+  }
 
   // Cloze display tokens (#289 4.3). `clozeIndex` indexes into this array. A
   // NULL means "derive it", which for every spaced pack is the whitespace split
@@ -1818,7 +1823,11 @@ export interface LessonRow {
   transcriptionStatus: TranscriptionStatus | null;
   transcriptionError: string | null;
   transcriptionAttempts: number;
+  pdfStatus: PdfStatus | null;
+  pdfError: string | null;
 }
+
+export type PdfStatus = 'pending' | 'processing' | 'ready' | 'failed';
 
 export interface TranscriptSegmentRow {
   userId: string;

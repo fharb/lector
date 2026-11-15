@@ -195,7 +195,7 @@ Tests: `e2e/reader-phrase-selection.spec.ts`, `e2e/reader-phrase-touch.spec.ts`,
 - Every button goes through `setSelectionWords`. It overwrites the state of the word's own entry, or else of its base word, and of any saved vocab entry. `All known` and `Ignore all` so change learning words too.
 - While the mouse drags, `MarkdownReader` sets `data-marking` on the words under the selection at each `selectionchange`, so they get their outline at once. The container hides the browser's selection colour.
 - A marking longer than `MAX_PHRASE_CHARS` (256, the server's phrase limit) gets no translation: the drawer shows only its word list. `readableText` skips the side translations (`data-reader-skip`), so a marking across paragraphs does not pick them up.
-- A plain click between words calls `onDismissSelection` (`dismissSelection`): the marking and the picks end, and the drawer closes, or empties when it is docked.
+- A plain click between words calls `onDismissSelection` (`dismissSelection`): the marking and the picks end, and the drawer closes, or empties when it is docked. In the PDF view, `WordOverlay` does the same through `onDismiss`.
 
 | Role | Path | Function |
 | --- | --- | --- |

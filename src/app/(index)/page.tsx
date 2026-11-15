@@ -13,6 +13,7 @@ import ImportDropdown from '@/components/ImportDropdown';
 import WebImportModal from '@/components/WebImportModal';
 import YouTubeImportModal from '@/components/YouTubeImportModal';
 import PasteImportModal from '@/components/PasteImportModal';
+import PdfImportModal from '@/components/PdfImportModal';
 import {
   DndContext,
   closestCenter,
@@ -59,6 +60,7 @@ export default function Home() {
   const [isWebImportOpen, setIsWebImportOpen] = useState(false);
   const [isYouTubeImportOpen, setIsYouTubeImportOpen] = useState(false);
   const [isPasteImportOpen, setIsPasteImportOpen] = useState(false);
+  const [isPdfImportOpen, setIsPdfImportOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -176,6 +178,10 @@ export default function Home() {
       onFileImport: () => {
         begin();
         fileInputRef.current?.click();
+      },
+      onPdfImport: () => {
+        begin();
+        setIsPdfImportOpen(true);
       },
       onAudioImport: () => {
         begin();
@@ -535,6 +541,21 @@ export default function Home() {
               router.push(`/read/${lessonId}`);
             }}
           />
+          <PdfImportModal
+            isOpen={isPdfImportOpen}
+            groupId={importGroupId}
+            onClose={() => {
+              setIsPdfImportOpen(false);
+              setImportGroupId(null);
+            }}
+            onImported={async ({ lessonId }) => {
+              setIsPdfImportOpen(false);
+              setImportGroupId(null);
+              setCollections(await getAllCollections());
+              router.push(`/read/${lessonId}`);
+            }}
+          />
+
           <PasteImportModal
             isOpen={isPasteImportOpen}
             onClose={() => {

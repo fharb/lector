@@ -34,11 +34,13 @@ import {
   getAllGroups,
   createGroup,
   retryTranscription,
+  retryPdf,
   type Collection,
   type CollectionGroup,
   type LessonSummary,
 } from '@/lib/data-layer';
 import SortableLessonRow from '../components/SortableLessonRow';
+import { pdfInProgress } from '@/components/PdfReader/status';
 import CollectionFormModal, { type CollectionFormData } from '../components/CollectionFormModal';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -133,7 +135,10 @@ export default function CollectionPage({ params }: { params: Promise<{ id: strin
   // While an audio lesson is transcribing in the background (#185), poll the
   // list so the row flips to readable (or to a retryable error) on its own.
   const hasTranscribing = lessons.some(
-    (l) => l.transcriptionStatus === 'pending' || l.transcriptionStatus === 'processing',
+    (l) =>
+      l.transcriptionStatus === 'pending' ||
+      l.transcriptionStatus === 'processing' ||
+      pdfInProgress(l.pdfStatus),
   );
   useEffect(() => {
     if (!hasTranscribing) return;
@@ -153,6 +158,15 @@ export default function CollectionPage({ params }: { params: Promise<{ id: strin
       await refreshLessons();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not retry transcription');
+    }
+  }
+
+  async function handleRetryPdf(lessonId: string) {
+    try {
+      await retryPdf(lessonId);
+      await refreshLessons();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not retry the PDF import');
     }
   }
 
@@ -325,6 +339,7 @@ export default function CollectionPage({ params }: { params: Promise<{ id: strin
                 onEdit={openEditLesson}
                 onDelete={handleDeleteLesson}
                 onRetryTranscription={handleRetryTranscription}
+                onRetryPdf={handleRetryPdf}
               />
             ))}
           </SortableContext>

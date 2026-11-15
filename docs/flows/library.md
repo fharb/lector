@@ -67,6 +67,7 @@ sequenceDiagram
 - If `sourceType` is `youtube`, the reader uses `YouTubePlayer` and `TranscriptReader`.
 - If listen mode is on and audio segments exist, the reader uses `ListenAlong`.
 - In sentence view, a text lesson uses `SentenceView`, and `lessonSentences` splits it into sentences. A YouTube lesson stays in `MarkdownReader` (`sentenceMode`): the player stays, and `SentencePanel` replaces the transcript under it. `transcriptSentences` builds the sentences from the cues, with their time span and character range. Play seeks to the start and pauses at the end. While the video plays, `sentenceAt` picks the sentence. `sentenceParts` cuts it at its cues, each with its timestamp. Both views mark only the cue the video is at (`currentCueClass`). The toggle is the last header button in both views (`trailingAction`).
+- If `sourceType` is `pdf` and `pdfStatus` is `ready`, the reader uses `PdfReader`.
 - Else the reader uses `ReaderArticle`.
 - The pack is the lesson language, not the UI language.
 - A lesson in CJK stores tokens in `lessons.segmentWords`. The reader uses longest match. If that fails, it uses `Intl.Segmenter`.
@@ -123,6 +124,7 @@ flowchart TD
   menu --> url[Web URL]
   menu --> yt[YouTube URL]
   menu --> audio[Audio file]
+  menu --> pdf[PDF file]
   epub --> epubApi["POST /api/import/epub"]
   md --> coll["POST /api/collections"]
   coll --> lesson["POST /api/collections/:id/lessons"]
@@ -132,6 +134,8 @@ flowchart TD
   resolve --> importYt["POST /api/import/youtube"]
   audio --> audioApi["POST /api/import/audio"]
   audioApi --> worker[transcribe-worker]
+  pdf --> pdfApi["POST /api/import/pdf"]
+  pdfApi --> pdfWorker[pdf-worker]
 ```
 
 ### EPUB
@@ -188,6 +192,21 @@ The lesson stores `sourceType = 'youtube'`, `sourceMeta`, and caption `segments`
 | Worker | `api/src/lib/transcribe-worker.ts` | `transcribeNextPending`, `applyTranscript` |
 
 The lesson starts with `transcriptionStatus = 'pending'`. The worker needs `TRANSCRIBE_WORKER=1`. After three ASR failures the status is `error`.
+
+### PDF
+
+| Role | Path | Function |
+| --- | --- | --- |
+| Modal | `src/components/PdfImportModal/index.tsx` | `handleImport` |
+| Client | `src/lib/data-layer.ts` | `importPdf`, `lessonPdfUrl`, `retryPdf` |
+| API | `api/src/routes/import.ts` | `POST /pdf` |
+| Files | `api/src/lib/pdf-files.ts` | `pdfPathForLesson`, `deletePdfForLesson` |
+| Worker | `api/src/lib/pdf-worker.ts` | `processNextPendingPdf`, `applyPagesResult`, `applyTextResult` |
+| Tools | `api/src/lib/pdf-tools.ts` | `pdfjsTools`, `pageTextFromItems` |
+| Reader | `src/components/PdfReader/index.tsx` | `PdfReader`, `PdfStatusScreen` |
+| Words | `src/components/PdfReader/page-words.ts` | `layoutPage`, `toPageItems` |
+
+The file is `DATA_DIR/books/<lessonId>.pdf`. The lesson has `sourceType = 'pdf'` and `pdfStatus` `pending`, `processing`, `ready`, or `failed`. The page text goes to `lessons.textContent`. The worker runs unless `PDF_WORKER=0`. It reads the text with pdf.js, so it needs no system package. There is no OCR: the dialog (`inspectPdf`) and the worker (`NO_TEXT_ERROR`) refuse a PDF with no text, and pages without text are listed in `sourceMeta.emptyPages`. Mode `text` splits by the bookmarks that the client reads with pdf.js, or every 10 pages, then deletes the file. Mode `pages` streams the file through `GET /api/lessons/:id/pdf` with `Range`. In the reader, `PdfContents` lists the bookmarks two levels deep (`readOutline`), and `PageJump` turns the page number into a field. Side translations sit beside a centred page, and go under it when the screen is too narrow. Delete of a lesson, a collection, or an account removes the file.
 
 ### Starter texts
 

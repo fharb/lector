@@ -10,6 +10,7 @@ const PURPOSE_SPECIFIC_LIMIT_PATHS = new Set([
   '/api/data',
   '/api/import/epub',
   '/api/import/audio',
+  '/api/import/pdf',
   '/api/billing/webhook',
 ]);
 

@@ -42,6 +42,7 @@
 import { db } from '../db';
 import { TENANT_TABLES } from './adopt-local-data';
 import { deleteAudioFile } from './audio-files';
+import { deletePdfForLesson } from './pdf-files';
 
 export const ERASURE_TABLES = [
   ...TENANT_TABLES,
@@ -86,6 +87,11 @@ export function purgeTenantData(userId: string, email?: string): void {
       .prepare('SELECT audioPath FROM lessons WHERE userId = ? AND audioPath IS NOT NULL')
       .all(userId) as { audioPath: string }[]
   ).map((r) => r.audioPath);
+  const pdfLessonIds = (
+    db.prepare("SELECT id FROM lessons WHERE userId = ? AND sourceType = 'pdf'").all(userId) as {
+      id: string;
+    }[]
+  ).map((r) => r.id);
 
   const run = db.transaction(() => {
     // Capture the Paddle customer ids linked to this tenant BEFORE deleting the
@@ -115,4 +121,5 @@ export function purgeTenantData(userId: string, email?: string): void {
   });
   run();
   for (const audioPath of audioPaths) deleteAudioFile(audioPath);
+  for (const lessonId of pdfLessonIds) deletePdfForLesson(lessonId);
 }

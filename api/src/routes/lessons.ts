@@ -15,6 +15,8 @@ import { analyserReadings } from '../lib/ja-morphology';
 import { resolveLanguage } from '../lib/active-language';
 import { getCurrentUserId } from '../lib/user';
 import { audioContentType, deleteAudioFile } from '../lib/audio-files';
+import { deletePdfForLesson, pdfPathForLesson } from '../lib/pdf-files';
+import { kickPdfWorker } from '../lib/pdf-worker';
 import { entitlements, planLimitResponse } from '../lib/entitlements';
 import { aggregateGrowthCheck, growingRowCheck, lessonTextBytes } from '../lib/storage-limits';
 import {
@@ -164,10 +166,39 @@ app.get('/:id/audio', async (c) => {
   if (!(await file.exists())) {
     return c.json({ error: 'Audio file is missing' }, 404);
   }
-  const size = file.size;
-  const contentType = audioContentType(lesson.audioPath);
+  return rangeResponse(file, audioContentType(lesson.audioPath), c.req.header('range'));
+});
 
-  const range = c.req.header('range');
+// GET /api/lessons/:id/pdf
+app.get('/:id/pdf', async (c) => {
+  const userId = getCurrentUserId(c);
+  const id = c.req.param('id');
+  const lang = resolveLanguage(c.req.query('language'), userId);
+  const lesson = db
+    .prepare('SELECT sourceType FROM lessons WHERE id = ? AND userId = ? AND language = ?')
+    .get(id, userId, lang) as { sourceType: string | null } | undefined;
+  if (lesson?.sourceType !== 'pdf') {
+    return c.json({ error: 'Lesson has no PDF' }, 404);
+  }
+  const file = Bun.file(pdfPathForLesson(id));
+  if (!(await file.exists())) {
+    return c.json({ error: 'PDF file is missing' }, 404);
+  }
+  const response = rangeResponse(file, 'application/pdf', c.req.header('range'));
+  response.headers.set('Cache-Control', 'private, no-cache');
+  response.headers.set(
+    'Access-Control-Expose-Headers',
+    'Accept-Ranges, Content-Range, Content-Length',
+  );
+  return response;
+});
+
+function rangeResponse(
+  file: ReturnType<typeof Bun.file>,
+  contentType: string,
+  range: string | undefined,
+): Response {
+  const size = file.size;
   const match = range?.match(/^bytes=(\d*)-(\d*)$/);
   if (match && (match[1] !== '' || match[2] !== '')) {
     // Suffix form (bytes=-N) means "the last N bytes".
@@ -200,6 +231,25 @@ app.get('/:id/audio', async (c) => {
       'Accept-Ranges': 'bytes',
     },
   });
+}
+
+// POST /api/lessons/:id/retry-pdf
+app.post('/:id/retry-pdf', (c) => {
+  const userId = getCurrentUserId(c);
+  const id = c.req.param('id');
+  const lang = resolveLanguage(c.req.query('language'), userId);
+  const changed = db
+    .prepare(
+      `UPDATE lessons
+          SET pdfStatus = 'pending', pdfError = NULL
+        WHERE id = ? AND userId = ? AND language = ? AND pdfStatus = 'failed' AND sourceType = 'pdf'`,
+    )
+    .run(id, userId, lang).changes;
+  if (changed === 0) {
+    return c.json({ error: 'Lesson has no failed PDF job to retry' }, 404);
+  }
+  kickPdfWorker();
+  return c.json({ success: true });
 });
 
 // POST /api/lessons/:id/retry-transcription (#185)
@@ -314,12 +364,16 @@ app.delete('/:id', (c) => {
   const id = c.req.param('id');
   const lang = resolveLanguage(c.req.query('language'), userId);
   let audioPath: string | null = null;
+  let hasPdf = false;
   db.transaction(() => {
     const owned = db
-      .prepare('SELECT audioPath FROM lessons WHERE id = ? AND userId = ? AND language = ?')
-      .get(id, userId, lang) as { audioPath: string | null } | undefined;
+      .prepare(
+        'SELECT audioPath, sourceType FROM lessons WHERE id = ? AND userId = ? AND language = ?',
+      )
+      .get(id, userId, lang) as { audioPath: string | null; sourceType: string | null } | undefined;
     if (!owned) return;
     audioPath = owned.audioPath;
+    hasPdf = owned.sourceType === 'pdf';
 
     // Vocabulary is portable after its source lesson is removed.
     db.prepare('UPDATE vocab SET bookId = NULL WHERE bookId = ? AND userId = ?').run(id, userId);
@@ -334,6 +388,7 @@ app.delete('/:id', (c) => {
   // The audio file is outside the transaction by nature; unlink after the row
   // is gone so a failed delete never orphans a lesson that points at nothing.
   deleteAudioFile(audioPath);
+  if (hasPdf) deletePdfForLesson(id);
   return c.json({ success: true });
 });
 

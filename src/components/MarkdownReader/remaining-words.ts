@@ -8,6 +8,7 @@ import {
   type WordSegmentation,
 } from '@/lib/languages';
 import type { WordState } from '@/types';
+import { isNumberWord } from './word-families';
 
 interface MarkdownNode {
   type: string;
@@ -117,4 +118,17 @@ export function wordStatPercents(stats: LessonWordStats): {
   const known = Math.round((stats.known / stats.total) * 100);
   const learning = Math.min(100 - known, Math.round((stats.learning / stats.total) * 100));
   return { known, learning, new: 100 - known - learning };
+}
+
+/** The new words of one PDF page, as the words to store: base words when `baseForms` has them. */
+export function remainingPageWords(
+  words: string[],
+  states: Map<string, WordState>,
+  baseForms: Map<string, string[]>,
+  pack: LanguageConfig,
+): string[] {
+  const keys = [...new Set(words.map((word) => foldWord(word, pack)))].filter(
+    (key) => !isNumberWord(key),
+  );
+  return remainingBaseWords(remainingWordKeys(keys, states, pack), baseForms);
 }

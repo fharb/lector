@@ -171,26 +171,61 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
     // is credential-less by design.
     const credentials = init?.credentials ?? (cloud ? 'include' : undefined);
     const res = await fetch(apiUrl(path), { ...init, credentials });
-    if (cloud && res.status === 401) {
-      bounceToLogin();
-    }
-    // 402 = authenticated but not subscribed (#224) — the billing gate's
-    // signal. Same hard-navigation reasoning as the 401 bounce.
-    if (cloud && res.status === 402) {
-      bounceToSubscribe();
-    }
-    // 429 plan_limit (#222) = subscribed but over a plan allowance — a soft
-    // upsell prompt, never a redirect. Centralized here so every surface
-    // (reader, journal, practice, imports) gets the graceful UX for free;
-    // the response still flows to the caller.
-    if (res.status === 429) {
-      interceptPlanLimit(res);
-    }
+    handleApiStatus(res);
     return res;
   } catch {
-    return new Response(
-      JSON.stringify({ error: 'The API is currently unavailable. Please try again in a moment.' }),
-      { status: 502, headers: { 'Content-Type': 'application/json' } },
-    );
+    return apiUnavailable();
   }
+}
+
+function apiUnavailable(): Response {
+  return new Response(
+    JSON.stringify({ error: 'The API is currently unavailable. Please try again in a moment.' }),
+    { status: 502, headers: { 'Content-Type': 'application/json' } },
+  );
+}
+
+function handleApiStatus(res: Response): void {
+  const cloud = lectorMode() === 'cloud';
+  if (cloud && res.status === 401) {
+    bounceToLogin();
+  }
+  // 402 = authenticated but not subscribed (#224) — the billing gate's
+  // signal. Same hard-navigation reasoning as the 401 bounce.
+  if (cloud && res.status === 402) {
+    bounceToSubscribe();
+  }
+  // 429 plan_limit (#222) = subscribed but over a plan allowance — a soft
+  // upsell prompt, never a redirect. Centralized here so every surface
+  // (reader, journal, practice, imports) gets the graceful UX for free;
+  // the response still flows to the caller.
+  if (res.status === 429) {
+    interceptPlanLimit(res);
+  }
+}
+
+/** A POST like `apiFetch`, with upload progress. XHR, because fetch reports none. */
+export function apiUpload(
+  path: string,
+  body: FormData,
+  onProgress?: (fraction: number) => void,
+): Promise<Response> {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', apiUrl(path));
+    xhr.withCredentials = lectorMode() === 'cloud';
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(event.loaded / event.total);
+    };
+    xhr.onerror = () => resolve(apiUnavailable());
+    xhr.onload = () => {
+      const res = new Response(xhr.responseText, {
+        status: xhr.status,
+        headers: { 'Content-Type': xhr.getResponseHeader('Content-Type') ?? 'application/json' },
+      });
+      handleApiStatus(res);
+      resolve(res);
+    };
+    xhr.send(body);
+  });
 }

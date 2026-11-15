@@ -1,4 +1,4 @@
-export type ImportSource = 'file' | 'audio' | 'url' | 'youtube' | 'paste';
+export type ImportSource = 'file' | 'pdf' | 'audio' | 'url' | 'youtube' | 'paste';
 
 /** A group the import can target, offered in the destination list. */
 export interface ImportDestination {
@@ -8,6 +8,7 @@ export interface ImportDestination {
 
 export interface ImportDropdownProps {
   onFileImport: () => void;
+  onPdfImport: () => void;
   onAudioImport: () => void;
   onUrlImport: () => void;
   onYouTubeImport: () => void;

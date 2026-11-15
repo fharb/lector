@@ -16,6 +16,7 @@ import {
 } from '../lib/storage-limits';
 import { validateOptionalLanguage, validateOwnedReference } from '../lib/persisted-input';
 import { deleteAudioFile } from '../lib/audio-files';
+import { deletePdfForLesson } from '../lib/pdf-files';
 
 const app = new Hono();
 
@@ -234,6 +235,7 @@ app.delete('/:id', (c) => {
   const id = c.req.param('id');
   const lang = resolveLanguage(c.req.query('language'), userId);
   let audioPaths: string[] = [];
+  let pdfLessonIds: string[] = [];
   db.transaction(() => {
     const owned = db
       .prepare('SELECT 1 FROM collections WHERE id = ? AND userId = ? AND language = ?')
@@ -251,6 +253,14 @@ app.delete('/:id', (c) => {
         )
         .all(id, userId, lang) as { audioPath: string }[]
     ).map((row) => row.audioPath);
+    pdfLessonIds = (
+      db
+        .prepare(
+          `SELECT id FROM lessons
+            WHERE collectionId = ? AND userId = ? AND language = ? AND sourceType = 'pdf'`,
+        )
+        .all(id, userId, lang) as { id: string }[]
+    ).map((row) => row.id);
     db.prepare(
       `DELETE FROM transcript_segments
         WHERE userId = ? AND lessonId IN (
@@ -286,6 +296,7 @@ app.delete('/:id', (c) => {
     );
   })();
   for (const audioPath of audioPaths) deleteAudioFile(audioPath);
+  for (const lessonId of pdfLessonIds) deletePdfForLesson(lessonId);
   return c.json({ success: true });
 });
 
@@ -298,7 +309,8 @@ app.get('/:id/lessons', (c) => {
       `
     SELECT id, collectionId, title, sortOrder, progress_scrollPosition,
       progress_percentComplete, wordCount, createdAt, lastReadAt,
-      audioDurationMs, transcriptionStatus, transcriptionError
+      audioDurationMs, transcriptionStatus, transcriptionError,
+      sourceType, pdfStatus, pdfError
     FROM lessons
     WHERE collectionId = ? AND userId = ?
     ORDER BY sortOrder ASC

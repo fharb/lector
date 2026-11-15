@@ -42,6 +42,18 @@ export interface CollectionGroup {
 /** Lifecycle of an audio-backed lesson's transcription (#185); absent on text lessons. */
 export type TranscriptionStatus = 'pending' | 'processing' | 'done' | 'error';
 
+export type PdfStatus = 'pending' | 'processing' | 'ready' | 'failed';
+export type PdfImportMode = 'pages' | 'text';
+
+/** `sourceMeta` of a lesson imported from a PDF. */
+export interface PdfSourceMeta {
+  mode: PdfImportMode;
+  originalName?: string;
+  pageCount?: number;
+  /** 1-based pages with no text layer. */
+  emptyPages?: number[];
+}
+
 /** One timestamped transcript cue for a YouTube-imported lesson (#334). */
 export interface TranscriptSegment {
   /** Seconds from the start of the video. */
@@ -93,6 +105,8 @@ export interface Lesson {
   audioDurationMs?: number | null;
   transcriptionStatus?: TranscriptionStatus | null;
   transcriptionError?: string | null;
+  pdfStatus?: PdfStatus | null;
+  pdfError?: string | null;
 }
 
 export interface LessonSummary {
@@ -108,6 +122,9 @@ export interface LessonSummary {
   audioDurationMs?: number | null;
   transcriptionStatus?: TranscriptionStatus | null;
   transcriptionError?: string | null;
+  sourceType?: string | null;
+  pdfStatus?: PdfStatus | null;
+  pdfError?: string | null;
 }
 
 /** One audio-timestamped transcript sentence for listen-along (#185). Distinct

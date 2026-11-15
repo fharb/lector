@@ -50,13 +50,23 @@ describe('default API request-body limit', () => {
 
   test('exempts only the purpose-capped paths and preserves Paddle raw bytes', async () => {
     const app = makeApp(8);
-    for (const path of ['/api/data', '/api/import/epub', '/api/billing/webhook']) {
+    for (const path of [
+      '/api/data',
+      '/api/import/epub',
+      '/api/import/pdf',
+      '/api/billing/webhook',
+    ]) {
       app.post(path, async (c) => c.text(await c.req.text()));
     }
     app.post('/api/data-export', async (c) => c.text(await c.req.text()));
 
     const rawBody = '  {"event_type":"subscription.updated"}\n';
-    for (const path of ['/api/data', '/api/import/epub', '/api/billing/webhook']) {
+    for (const path of [
+      '/api/data',
+      '/api/import/epub',
+      '/api/import/pdf',
+      '/api/billing/webhook',
+    ]) {
       const response = await app.request(path, { method: 'POST', body: rawBody });
       expect(response.status).toBe(200);
       expect(await response.text()).toBe(rawBody);

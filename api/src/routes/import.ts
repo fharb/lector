@@ -17,6 +17,15 @@ import {
 import { estimateTranscriptionMinutes, probeAudioDurationMs } from '../lib/audio-probe';
 import { getLanguageConfig, normalizeText, type LanguageConfig } from '../lib/languages';
 import { validateOwnedReference } from '../lib/persisted-input';
+import {
+  deletePdfForLesson,
+  looksLikePdf,
+  parseOutline,
+  parsePdfImportMode,
+  pdfPathForLesson,
+  savePdfFile,
+} from '../lib/pdf-files';
+import { kickPdfWorker, type PdfSourceMeta } from '../lib/pdf-worker';
 import { randomUUID } from 'crypto';
 
 // Cap the upload before it's buffered into memory. EPUBs are small; this stops a
@@ -28,6 +37,8 @@ const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
 // ~60 MB; 500 MB comfortably covers multi-hour recordings while still bounding
 // what one request can buffer.
 const MAX_AUDIO_UPLOAD_BYTES = 500 * 1024 * 1024; // 500 MB
+
+const MAX_PDF_UPLOAD_BYTES = 500 * 1024 * 1024;
 
 // An import can be started from inside a library group, in which case the new
 // collection lands in that group instead of Ungrouped. The multipart field is
@@ -290,6 +301,99 @@ export function makeImportRoutes({
       } catch (err) {
         console.error('Audio import failed:', err);
         return c.json({ error: 'Failed to import audio file' }, 400);
+      }
+    },
+  );
+
+  // POST /api/import/pdf - store a PDF and queue a pending lesson for the PDF worker.
+  app.post(
+    '/pdf',
+    bodyLimit({
+      maxSize: MAX_PDF_UPLOAD_BYTES,
+      onError: (c) => c.json({ error: 'PDF is too large (max 500 MB).' }, 413),
+    }),
+    async (c) => {
+      try {
+        const userId = getCurrentUserId(c);
+
+        const preflight = engine.checkLimit(userId, 'maxCollections');
+        if (!preflight.allowed) return planLimitResponse(c, preflight);
+
+        const formData = await c.req.formData();
+        const file = formData.get('file');
+        const lang = resolveLanguage(formData.get('language') as string | null, userId);
+
+        if (!file || typeof file === 'string') {
+          return c.json({ error: 'File required' }, 400);
+        }
+        if (path.extname(file.name || '').toLowerCase() !== '.pdf') {
+          return c.json({ error: 'Choose a .pdf file.' }, 400);
+        }
+        const mode = parsePdfImportMode(formData.get('mode'));
+        if (!mode) return c.json({ error: 'mode must be "pages" or "text"' }, 400);
+
+        const groupId = readGroupId(formData.get('groupId'));
+        const groupIdError = validateOwnedReference(
+          'collection_groups',
+          groupId,
+          userId,
+          'groupId',
+        );
+        if (groupIdError) return c.json({ error: groupIdError }, 400);
+
+        if (!looksLikePdf(new Uint8Array(await file.slice(0, 1024).arrayBuffer()))) {
+          return c.json({ error: 'The file is not a PDF.' }, 400);
+        }
+
+        const rawTitle = formData.get('title');
+        const fallbackTitle = path.basename(file.name || 'PDF', path.extname(file.name || ''));
+        const title =
+          normalizeText(
+            typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle.trim() : fallbackTitle,
+          ).slice(0, 300) || 'PDF';
+        const meta: PdfSourceMeta = {
+          mode,
+          originalName: (file.name || '').slice(0, 300),
+          ...(mode === 'text' ? { outline: parseOutline(formData.get('outline')) } : {}),
+        };
+
+        const collectionId = randomUUID();
+        const lessonId = randomUUID();
+        const now = new Date().toISOString();
+        await savePdfFile(pdfPathForLesson(lessonId), file);
+
+        const verdict = engine.reserveCount(
+          userId,
+          [
+            { metric: 'maxCollections' },
+            { metric: 'maxLessons' },
+            {
+              metric: 'maxCollectionMetadataBytes',
+              requested: collectionMetadataBytes({ title, author: 'PDF import' }),
+            },
+          ],
+          () => {
+            db.prepare(
+              `INSERT INTO collections (id, title, author, coverUrl, groupId, language, createdAt, lastReadAt, userId)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ).run(collectionId, title, 'PDF import', null, groupId, lang, now, now, userId);
+            db.prepare(
+              `INSERT INTO lessons (id, collectionId, title, sortOrder, textContent, wordCount, language,
+                                    createdAt, lastReadAt, userId, sourceType, sourceMeta, pdfStatus)
+               VALUES (?, ?, ?, 0, '', 0, ?, ?, ?, ?, 'pdf', ?, 'pending')`,
+            ).run(lessonId, collectionId, title, lang, now, now, userId, JSON.stringify(meta));
+          },
+        );
+        if (!verdict.allowed) {
+          deletePdfForLesson(lessonId);
+          return planLimitResponse(c, verdict);
+        }
+
+        kickPdfWorker();
+        return c.json({ collectionId, lessonId, title, mode, pdfStatus: 'pending' });
+      } catch (err) {
+        console.error('PDF import failed:', err);
+        return c.json({ error: 'Failed to import PDF file' }, 400);
       }
     },
   );

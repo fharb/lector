@@ -5504,6 +5504,152 @@
         "x-token-scope": "collections:write"
       }
     },
+    "/api/import/pdf": {
+      "post": {
+        "operationId": "postApiImportPdf",
+        "summary": "Import a PDF",
+        "description": "Stores the PDF and creates a pending lesson. A background worker reads the text of each page, so poll the lesson for `pdfStatus`. A PDF without text, such as a scan, fails with an error. Mode `pages` keeps the PDF and shows its pages. Mode `text` turns the text into ordinary lessons and deletes the PDF.",
+        "tags": [
+          "Import"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The PDF file."
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "pages",
+                      "text"
+                    ],
+                    "default": "pages"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "language": {
+                    "type": "string"
+                  },
+                  "groupId": {
+                    "type": "string"
+                  },
+                  "outline": {
+                    "type": "string",
+                    "description": "Mode `text` only. JSON array of `{ title, page }`, with 1-based pages. Each entry starts a lesson. Without it, each lesson holds 10 pages."
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The PDF is stored and queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "collectionId": {
+                      "type": "string"
+                    },
+                    "lessonId": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "pages",
+                        "text"
+                      ]
+                    },
+                    "pdfStatus": {
+                      "type": "string",
+                      "enum": [
+                        "pending"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is malformed, or a field is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The credential is missing, invalid or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token does not carry the scope this endpoint needs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A plan limit or a rate limit stopped the call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The API failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "PersonalAccessToken": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "x-token-scope": "collections:write"
+      }
+    },
     "/api/import/youtube": {
       "post": {
         "operationId": "postApiImportYoutube",
@@ -7437,6 +7583,113 @@
         "x-token-scope": "collections:read"
       }
     },
+    "/api/lessons/{id}/pdf": {
+      "get": {
+        "operationId": "getApiLessonsByIdPdf",
+        "summary": "Stream the PDF of a lesson",
+        "description": "Serves the PDF file of a page lesson. The endpoint honours the `Range` header and answers `206` with `Content-Range`, so a viewer can load single pages.",
+        "tags": [
+          "Library"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Lesson identifier.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/LanguageQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The complete PDF file.",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "The requested byte range.",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The credential is missing, invalid or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token does not carry the scope this endpoint needs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The lesson has no PDF, or the stored file is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A plan limit or a rate limit stopped the call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The API failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "PersonalAccessToken": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "x-token-scope": "collections:read"
+      }
+    },
     "/api/lessons/{id}/progress": {
       "put": {
         "operationId": "putApiLessonsByIdProgress",
@@ -7657,6 +7910,101 @@
           }
         ],
         "x-token-scope": "collections:read"
+      }
+    },
+    "/api/lessons/{id}/retry-pdf": {
+      "post": {
+        "operationId": "postApiLessonsByIdRetryPdf",
+        "summary": "Retry a failed PDF import",
+        "description": "Puts a failed PDF lesson back in the queue for text extraction.",
+        "tags": [
+          "Library"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Lesson identifier.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/LanguageQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The lesson is queued again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The credential is missing, invalid or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token does not carry the scope this endpoint needs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such lesson, or its PDF job did not fail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A plan limit or a rate limit stopped the call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The API failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "PersonalAccessToken": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "x-token-scope": "collections:write"
       }
     },
     "/api/lessons/{id}/retry-transcription": {
@@ -11895,6 +12243,26 @@
           "transcriptionAttempts": {
             "type": "integer"
           },
+          "pdfStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "pending",
+              "processing",
+              "ready",
+              "failed",
+              null
+            ],
+            "description": "State of the PDF job. Null for a lesson that did not come from a PDF."
+          },
+          "pdfError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -11963,6 +12331,32 @@
             ]
           },
           "transcriptionError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pdfStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "pending",
+              "processing",
+              "ready",
+              "failed",
+              null
+            ],
+            "description": "State of the PDF job. Null for a lesson that did not come from a PDF."
+          },
+          "pdfError": {
             "type": [
               "string",
               "null"

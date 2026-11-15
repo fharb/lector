@@ -1,5 +1,5 @@
 import React from 'react';
-import { AudioLines, Captions, File, Link, Text } from 'lucide-react';
+import { AudioLines, Captions, File, FileText, Link, Text } from 'lucide-react';
 import type { ImportSource } from './types';
 
 export const IMPORT_OPTIONS: Array<{
@@ -11,6 +11,11 @@ export const IMPORT_OPTIONS: Array<{
     source: 'file',
     label: 'Import File',
     icon: File,
+  },
+  {
+    source: 'pdf',
+    label: 'Import PDF',
+    icon: FileText,
   },
   {
     source: 'audio',

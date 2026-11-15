@@ -13,7 +13,7 @@ import {
   isValidLanguageCode,
   lookupByVocabKeys,
 } from './languages';
-import { apiFetch, apiUrl } from './api-base';
+import { apiFetch, apiUpload, apiUrl } from './api-base';
 import { activeTenantId, readLanguageCache } from './language-cache';
 import { cachedQuery, clearTenantQueries, invalidateQueries, type QueryKey } from './query-cache';
 
@@ -112,6 +112,8 @@ export type {
   TranscriptSegment,
   AudioTranscriptSegment,
   TranscriptionStatus,
+  PdfStatus,
+  PdfImportMode,
 } from '@/types';
 
 export type { ReadingStats } from './stats-derive';
@@ -129,6 +131,7 @@ import type {
   ClozeCollection,
   ClozeMasteryLevel,
   AudioTranscriptSegment,
+  PdfImportMode,
 } from '@/types';
 
 // ============================================================================
@@ -383,6 +386,51 @@ export async function getLessonSegments(lessonId: string): Promise<AudioTranscri
 /** Direct (range-seekable) audio URL for an audio-backed lesson — feed it to <audio src>. */
 export function lessonAudioUrl(lessonId: string): string {
   return apiUrl(`/api/lessons/${lessonId}/audio`);
+}
+
+export interface PdfImportResult {
+  collectionId: string;
+  lessonId: string;
+  title: string;
+  mode: PdfImportMode;
+  pdfStatus: 'pending';
+}
+
+export async function importPdf(
+  file: File,
+  options: {
+    mode: PdfImportMode;
+    title?: string;
+    groupId?: string | null;
+    outline?: { title: string; page: number }[];
+    onProgress?: (fraction: number) => void;
+  },
+): Promise<PdfImportResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('language', getActiveLanguage());
+  formData.append('mode', options.mode);
+  if (options.title) formData.append('title', options.title);
+  if (options.groupId) formData.append('groupId', options.groupId);
+  if (options.mode === 'text' && options.outline?.length) {
+    formData.append('outline', JSON.stringify(options.outline));
+  }
+  const res = await apiUpload('/api/import/pdf', formData, options.onProgress);
+  await requireOk(res, 'Failed to import the PDF.');
+  invalidateCollections();
+  invalidateReadingStats();
+  return res.json();
+}
+
+/** The PDF of a page lesson, served with Range support. */
+export function lessonPdfUrl(lessonId: string): string {
+  return apiUrl(`/api/lessons/${lessonId}/pdf`);
+}
+
+export async function retryPdf(lessonId: string): Promise<void> {
+  const res = await apiFetch(`/api/lessons/${lessonId}/retry-pdf`, { method: 'POST' });
+  await requireOk(res, 'Could not retry the PDF import');
+  invalidateCollections();
 }
 
 export async function retryTranscription(lessonId: string): Promise<void> {

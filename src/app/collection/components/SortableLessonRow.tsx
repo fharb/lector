@@ -13,6 +13,7 @@ import {
 import { LessonSummary } from '@/types';
 import Link from 'next/link';
 import { useMemo } from 'react';
+import { pdfInProgress, pdfStatusLabel } from '@/components/PdfReader/status';
 
 export default function SortableLessonRow({
   lesson,
@@ -20,12 +21,14 @@ export default function SortableLessonRow({
   onEdit,
   onDelete,
   onRetryTranscription,
+  onRetryPdf,
 }: {
   lesson: LessonSummary;
   index: number;
   onEdit: (id: string) => void;
   onDelete: (id: string, title: string) => void;
   onRetryTranscription?: (id: string) => void;
+  onRetryPdf?: (id: string) => void;
 }) {
   const {
     attributes,
@@ -46,6 +49,8 @@ export default function SortableLessonRow({
   const transcribing =
     lesson.transcriptionStatus === 'pending' || lesson.transcriptionStatus === 'processing';
   const transcriptionFailed = lesson.transcriptionStatus === 'error';
+  const pdfWorking = pdfInProgress(lesson.pdfStatus);
+  const pdfFailed = lesson.pdfStatus === 'failed';
 
   const CTALabel = useMemo(() => {
     if (progress === 0) {
@@ -94,7 +99,24 @@ export default function SortableLessonRow({
           {/* Lesson info */}
           <div className="">
             <h3 className="truncate text-sm font-medium text-foreground">{lesson.title}</h3>
-            {transcribing ? (
+            {pdfWorking ? (
+              <p
+                className="flex items-center gap-1 text-xs text-muted-foreground"
+                data-testid={`pdf-working-${lesson.id}`}
+              >
+                <LoaderCircle className="h-3 w-3 animate-spin" />
+                {pdfStatusLabel(lesson.pdfStatus)}
+              </p>
+            ) : pdfFailed ? (
+              <p
+                className="flex items-center gap-1 text-xs text-destructive"
+                title={lesson.pdfError ?? undefined}
+                data-testid={`pdf-failed-${lesson.id}`}
+              >
+                <TriangleAlert className="h-3 w-3" />
+                {pdfStatusLabel(lesson.pdfStatus)}
+              </p>
+            ) : transcribing ? (
               <p
                 className="flex items-center gap-1 text-xs text-muted-foreground"
                 data-testid={`transcribing-${lesson.id}`}
@@ -145,15 +167,28 @@ export default function SortableLessonRow({
         </button>
       )}
 
+      {pdfFailed && onRetryPdf && (
+        <button
+          onClick={() => onRetryPdf(lesson.id)}
+          className="flex-shrink-0 cursor-pointer rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+          title="Retry the PDF import"
+          data-testid={`retry-pdf-${lesson.id}`}
+        >
+          <RotateCcw className="h-4 w-4" />
+        </button>
+      )}
+
       {/* Edit button */}
-      <button
-        onClick={() => onEdit(lesson.id)}
-        className="flex-shrink-0 cursor-pointer rounded-lg p-2 text-muted-foreground transition-all hover:bg-accent hover:text-foreground"
-        title="Edit lesson"
-        data-testid={`edit-lesson-${lesson.id}`}
-      >
-        <SquarePen className="h-4 w-4" />
-      </button>
+      {lesson.sourceType !== 'pdf' && (
+        <button
+          onClick={() => onEdit(lesson.id)}
+          className="flex-shrink-0 cursor-pointer rounded-lg p-2 text-muted-foreground transition-all hover:bg-accent hover:text-foreground"
+          title="Edit lesson"
+          data-testid={`edit-lesson-${lesson.id}`}
+        >
+          <SquarePen className="h-4 w-4" />
+        </button>
+      )}
 
       {/* Delete button */}
       <button
