@@ -183,7 +183,26 @@ flowchart TD
 
 Managed Free uses a short phrase prompt and `phraseTranslationsPerDay`. Phrase save does not write the dictionary cache.
 
-Tests: `e2e/reader-phrase-selection.spec.ts`, `e2e/reader-phrase-touch.spec.ts`.
+The sentence of a phrase comes from its first and last word spans (`wordsInRange`), not from the mouse-down point. A phrase across sentences gets both sentences.
+
+Tests: `e2e/reader-phrase-selection.spec.ts`, `e2e/reader-phrase-touch.spec.ts`, `e2e/reader-phrase-sentence.spec.ts`.
+
+### Marked and picked words
+
+- Ctrl+click (Cmd+click on a Mac) on a word with `data-reader-word` adds it to `pickedWords` in the reader page, or removes it. Closing the drawer clears the list.
+- The drawer then shows only `SelectionWords` (`selectionOnly`): each picked word once, with Known and Ignore, and both for all new words or all words.
+- A phrase marked with the mouse shows the same list under its translation. `Add to Anki as a card` sends it through `addWordToAnki` as a Basic card with an empty meaning, so the back holds only the translation.
+- Every button goes through `setSelectionWords`. It overwrites the state of the word's own entry, or else of its base word, and of any saved vocab entry. `All known` and `Ignore all` so change learning words too.
+- While the mouse drags, `MarkdownReader` sets `data-marking` on the words under the selection at each `selectionchange`, so they get their outline at once. The container hides the browser's selection colour.
+- A marking longer than `MAX_PHRASE_CHARS` (256, the server's phrase limit) gets no translation: the drawer shows only its word list. `readableText` skips the side translations (`data-reader-skip`), so a marking across paragraphs does not pick them up.
+- A plain click between words calls `onDismissSelection` (`dismissSelection`): the marking and the picks end, and the drawer closes, or empties when it is docked.
+
+| Role | Path | Function |
+| --- | --- | --- |
+| Drawer | `src/components/TranslationDrawer/components/SelectionWords.tsx` | `SelectionWords` |
+| Reader page | `src/app/read/[bookId]/page.tsx` | `selectionWords`, `togglePickedWord`, `setSelectionWords` |
+
+Tests: `e2e/reader-selection.spec.ts`.
 
 ## Enrich and nested lookup
 

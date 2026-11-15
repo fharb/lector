@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import ListenAlong from '@/components/ListenAlong';
 import MarkKnownUnknown from '@/components/MarkKnownUnknown';
-import MarkRemainingKnown from '@/components/MarkRemainingKnown';
+import MarkRemainingKnown, { type BulkWordTarget } from '@/components/MarkRemainingKnown';
 import LessonWordStats from '@/components/LessonWordStats';
 import {
   type Lesson,
@@ -48,7 +48,13 @@ import { phraseSelectionLimitPayload, showPlanLimitToast } from '@/lib/plan-limi
 import { addWordCard, addClozeCard, buildSourceLinkHtml } from '@/lib/anki';
 import { queueForAnki } from '@/lib/anki-queue';
 import { useAnkiTransport } from '@/lib/anki-transport';
-import { translateWord, translatePhrase, streamWordGloss, enrichWord } from '@/lib/claude';
+import {
+  MAX_PHRASE_CHARS,
+  translateWord,
+  translatePhrase,
+  streamWordGloss,
+  enrichWord,
+} from '@/lib/claude';
 import {
   lookupWordRemote,
   cacheAcceptedTranslation,
@@ -60,7 +66,9 @@ import {
   foldWord,
   getLanguageConfig,
   isValidLanguageCode,
+  lookupByVocabKeys,
   makeWordSegmentation,
+  tokenize,
   withoutStress,
 } from '@/lib/languages';
 import { toast } from 'sonner';
@@ -106,6 +114,26 @@ import {
   type OnboardingSnapshot,
 } from '@/lib/onboarding';
 
+const EMPTY_WORD_PANEL: WordPanelState = {
+  isOpen: false,
+  word: '',
+  sentence: '',
+  translation: null,
+  partOfSpeech: null,
+  dictEntry: null,
+  aiContextTranslation: null,
+  aiContextPartOfSpeech: null,
+  aiStructured: null,
+  phraseDetails: null,
+  isLoading: false,
+  isContextLoading: false,
+  isStreamingGloss: false,
+  isEnriching: false,
+  isDictionaryResult: false,
+  error: null,
+  existingEntry: null,
+};
+
 export default function ReadPage({ params }: { params: Promise<{ bookId: string }> }) {
   const { bookId: lessonId } = use(params);
   const router = useRouter();
@@ -141,25 +169,10 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   // the drawer, so a mined card can carry its timestamped YouTube link.
   const currentWordSourceRef = useRef<WordSource | null>(null);
 
-  const [wordPanel, setWordPanel] = useState<WordPanelState>({
-    isOpen: false,
-    word: '',
-    sentence: '',
-    translation: null,
-    partOfSpeech: null,
-    dictEntry: null,
-    aiContextTranslation: null,
-    aiContextPartOfSpeech: null,
-    aiStructured: null,
-    phraseDetails: null,
-    isLoading: false,
-    isContextLoading: false,
-    isStreamingGloss: false,
-    isEnriching: false,
-    isDictionaryResult: false,
-    error: null,
-    existingEntry: null,
-  });
+  const [wordPanel, setWordPanel] = useState<WordPanelState>(EMPTY_WORD_PANEL);
+
+  // Separate words picked with Ctrl+click (Cmd+click on a Mac).
+  const [pickedWords, setPickedWords] = useState<string[]>([]);
 
   const [onboarding, setOnboarding] = useState<OnboardingSnapshot | null>(null);
   const onboardingLessonOpenRef = useRef<string | null>(null);
@@ -275,18 +288,21 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     [activeLang],
   );
 
+  const segmentation = useMemo(
+    () => makeWordSegmentation(parseSegmentWords(lesson?.segmentWords)),
+    [lesson?.segmentWords],
+  );
+
   const lessonWordKeys = useMemo(() => {
     if (!lesson) return [];
     const texts =
       lesson.sourceType === 'youtube'
         ? [lesson.textContent]
         : tappableMarkdownText(lesson.textContent);
-    return uniqueWordKeys(
-      texts,
-      lessonPack,
-      makeWordSegmentation(parseSegmentWords(lesson.segmentWords)),
-    );
-  }, [lesson, lessonPack]);
+    return uniqueWordKeys(texts, lessonPack, segmentation);
+  }, [lesson, lessonPack, segmentation]);
+
+  const sameLanguage = lessonPack.code === activeLang.code;
 
   const recognizesForms = Boolean(lessonPack.wordForms) && lessonPack.code === activeLang.code;
   const lessonIdForForms = lesson?.id;
@@ -418,26 +434,40 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     }
   }, [knownInLesson]);
 
-  const markRemainingKnown = useCallback(async () => {
-    const patch = patchWordStates(readerWordStatesRef.current, remainingBases, 'known');
+  const setWordsState = useCallback(async (words: string[], state: BulkWordTarget) => {
+    if (words.length === 0) return;
+    const patch = patchWordStates(readerWordStatesRef.current, words, state);
     readerWordStatesRef.current = patch.map;
     setReaderWordStates(patch.map);
 
     try {
-      await bulkUpdateWordStates(remainingBases.map((word) => ({ word, state: 'known' })));
+      await bulkUpdateWordStates(words.map((word) => ({ word, state })));
     } catch (err) {
       const restored = patch.rollback(readerWordStatesRef.current);
       readerWordStatesRef.current = restored;
       setReaderWordStates(restored);
       // apiFetch has already shown the upsell toast for a plan limit.
       if (!(err instanceof Error && err.message === 'plan_limit')) {
-        toast.error('Could not mark the words as known — check your connection.');
+        toast.error(
+          state === 'known'
+            ? 'Could not mark the words as known — check your connection.'
+            : 'Could not ignore the words — check your connection.',
+        );
       }
       return;
     }
 
-    await incrementDailyStat('wordsMarkedKnown', remainingBases.length);
-  }, [remainingBases]);
+    if (state === 'known') await incrementDailyStat('wordsMarkedKnown', words.length);
+  }, []);
+
+  const markRemainingKnown = useCallback(
+    () => setWordsState(remainingBases, 'known'),
+    [remainingBases, setWordsState],
+  );
+  const ignoreRemaining = useCallback(
+    () => setWordsState(remainingBases, 'ignored'),
+    [remainingBases, setWordsState],
+  );
 
   // Explicitly record a real reader open (not the background GET /lessons)
   // and remember tomorrow's next lesson. Both writes are idempotent so a
@@ -537,16 +567,18 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   const handleWordClick = useCallback(
     async (word: string, sentence: string, source?: WordSource) => {
       if (isNumberWord(word)) return;
+      setPickedWords([]);
 
       // Remember (or clear) the transcript segment this word came from so a
       // subsequent Anki mine can attach the timestamped source link.
       currentWordSourceRef.current = source ?? null;
       const isPhrase = word.includes(' ');
+      const tooLong = isPhrase && word.length > MAX_PHRASE_CHARS;
 
       // Reflect the plan's phrase-selection cap before calling the API (#222).
       // The server enforces it regardless; this just turns the over-cap case
       // into an immediate upsell prompt instead of a doomed request.
-      if (isPhrase) {
+      if (isPhrase && !tooLong) {
         const phraseWords = word.trim().split(/\s+/).filter(Boolean).length;
         const ent = await getEntitlements();
         const limitPayload = ent ? phraseSelectionLimitPayload(ent, phraseWords) : null;
@@ -558,8 +590,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
 
       const requestId = ++translationRequestId.current;
 
-      const wordsToSpeak = word.split(/\s+/).slice(0, 15).join(' ');
-      speak(wordsToSpeak);
+      if (!isPhrase) speak(word);
 
       // Open popup immediately in loading state so keyboard shortcuts (K/X) are responsive
       setWordPanel({
@@ -573,7 +604,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
         aiContextPartOfSpeech: null,
         aiStructured: null,
         phraseDetails: null,
-        isLoading: true,
+        isLoading: !tooLong,
         isContextLoading: false,
         isStreamingGloss: false,
         isEnriching: false,
@@ -581,6 +612,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
         error: null,
         existingEntry: null,
       });
+      if (tooLong) return;
 
       incrementDailyStat('dictionaryLookups');
       trackOnboardingLookup(word);
@@ -707,8 +739,98 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   );
 
   const closeWordPanel = useCallback(() => {
+    setPickedWords([]);
     setWordPanel((prev) => ({ ...prev, isOpen: false }));
   }, []);
+
+  /** Also empties the docked drawer, which never closes. */
+  const dismissSelection = useCallback(() => {
+    translationRequestId.current += 1;
+    setPickedWords([]);
+    setWordPanel(EMPTY_WORD_PANEL);
+  }, []);
+
+  // The words of a marked phrase or of the Ctrl+click picks, once each, with their state.
+  const selectionWords = useMemo(() => {
+    const source = pickedWords.length > 0 ? pickedWords.join(' ') : wordPanel.word;
+    if (pickedWords.length === 0 && !source.includes(' ')) return [];
+    const seen = new Set<string>();
+    const words: { word: string; state: WordState }[] = [];
+    for (const token of tokenize(source, lessonPack, segmentation)) {
+      if (!token.isWord || isNumberWord(token.text)) continue;
+      const key = foldWord(token.text, lessonPack);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      words.push({
+        word: token.text,
+        state: lookupByVocabKeys(displayedWordStates, token.text, lessonPack) ?? 'new',
+      });
+    }
+    return words;
+  }, [displayedWordStates, lessonPack, pickedWords, segmentation, wordPanel.word]);
+
+  /** Overwrites the state, in the reader and in any saved vocab entry. A word without its own entry goes to its base word. */
+  const setSelectionWords = useCallback(
+    async (words: string[], state: BulkWordTarget) => {
+      const targets = [
+        ...new Set(
+          words.map((word) => {
+            const key = foldWord(word, lessonPack);
+            if (!recognizesForms || readerWordStatesRef.current.has(key)) return key;
+            return baseForms.get(key)?.[0] ?? key;
+          }),
+        ),
+      ];
+      await setWordsState(targets, state);
+      await Promise.all(
+        targets.map(async (target) => {
+          const entry = await getVocabByText(target);
+          if (entry && entry.state !== state) await updateVocabState(entry.id, state);
+        }),
+      );
+    },
+    [baseForms, lessonPack, recognizesForms, setWordsState],
+  );
+
+  const togglePickedWord = useCallback(
+    (word: string) => {
+      const key = foldWord(word, lessonPack);
+      const next = pickedWords.some((w) => foldWord(w, lessonPack) === key)
+        ? pickedWords.filter((w) => foldWord(w, lessonPack) !== key)
+        : [...pickedWords, word];
+      translationRequestId.current += 1;
+      setPickedWords(next);
+      setWordPanel((panel) =>
+        next.length === 0
+          ? { ...panel, isOpen: false }
+          : { ...EMPTY_WORD_PANEL, isOpen: true, word: next.join(' ') },
+      );
+    },
+    [lessonPack, pickedWords],
+  );
+
+  useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.button !== 0) return;
+      const target = event.target instanceof Element ? event.target : null;
+      const element = target?.closest<HTMLElement>('[data-reader-word]');
+      const word = element?.dataset.readerWord;
+      if (!word || isNumberWord(word)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      togglePickedWord(word);
+    };
+    document.addEventListener('click', onClick, true);
+    return () => document.removeEventListener('click', onClick, true);
+  }, [togglePickedWord]);
+
+  const pickedStyle = useMemo(() => {
+    if (pickedWords.length === 0 || typeof CSS === 'undefined') return '';
+    const selectors = pickedWords
+      .map((word) => `[data-reader-word="${CSS.escape(word)}"]`)
+      .join(',');
+    return `${selectors}{outline:2px solid var(--ring);outline-offset:1px;border-radius:4px}`;
+  }, [pickedWords]);
 
   // Nested lookup from inside the drawer (issue #106) — e.g. clicking "vrug"
   // in the gloss "plural of vrug". Re-targets the drawer like a reader word
@@ -1185,11 +1307,13 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
 
   const addWordToAnki = useCallback(async () => {
     const { basic: deckName } = getAnkiDecks();
-    const wordMeaning =
-      wordPanel.dictEntry?.senses[0]?.gloss ??
-      wordPanel.aiStructured?.senses[0]?.gloss ??
-      wordPanel.translation ??
-      '';
+    const isPhrase = wordPanel.word.includes(' ');
+    const wordMeaning = isPhrase
+      ? ''
+      : (wordPanel.dictEntry?.senses[0]?.gloss ??
+        wordPanel.aiStructured?.senses[0]?.gloss ??
+        wordPanel.translation ??
+        '');
     const translation = wordPanel.aiContextTranslation ?? wordPanel.translation ?? '';
     // Transcript provenance (#334) for the current word, if it came from a video.
     const source = currentWordSourceRef.current;
@@ -1376,6 +1500,8 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
       // capture, so an IME candidate pick would trigger them (#289 4.5): typing
       // Chinese anywhere on this page with the drawer open would set word level.
       if (isComposing(e)) return;
+      if (e.target instanceof HTMLElement && e.target.closest('input, textarea')) return;
+      if (pickedWords.length > 0 && e.key !== 'Escape') return;
       // Cmd/Ctrl+C copies the word or phrase the drawer is showing. Word spans
       // keep the whitespace between them in the DOM, so this — like a native
       // copy — preserves spaces (readers that drop inter-word gaps copy e.g.
@@ -1422,6 +1548,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   }, [
     wordPanel.isOpen,
     wordPanel.word,
+    pickedWords.length,
     wordPanel.existingEntry,
     wordPanel.translation,
     closeWordPanel,
@@ -1542,6 +1669,11 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     <>
       <LessonWordStats stats={wordStats} />
       <MarkRemainingKnown count={remainingBases.length} onConfirm={markRemainingKnown} />
+      <MarkRemainingKnown
+        count={remainingBases.length}
+        onConfirm={ignoreRemaining}
+        target="ignored"
+      />
       <MarkKnownUnknown count={knownInLesson.length} onConfirm={markKnownUnknown} />
     </>
   );
@@ -1559,6 +1691,37 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     >
       <TextQuote className="h-5 w-5" />
     </button>
+  );
+
+  const glossMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        title={`Translations of learning words: ${GLOSS_MODE_LABELS[glossMode]}`}
+        aria-label={`Translations of learning words: ${GLOSS_MODE_LABELS[glossMode]}`}
+        data-testid="gloss-toggle"
+        data-gloss-mode={glossMode}
+        className={`flex items-center gap-1.5 rounded-lg p-2 transition-colors hover:bg-accent ${
+          showGlosses ? 'text-foreground' : 'text-muted-foreground/60'
+        }`}
+      >
+        <Captions className="h-5 w-5" />
+        <span className="hidden text-xs sm:inline">
+          Translations: {GLOSS_MODE_LABELS[glossMode]}
+        </span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuRadioGroup
+          value={glossMode}
+          onValueChange={(mode) => chooseGlossMode(mode as GlossMode)}
+        >
+          {GLOSS_MODES.map((mode) => (
+            <DropdownMenuRadioItem key={mode} value={mode} data-testid={`gloss-mode-${mode}`}>
+              {GLOSS_MODE_MENU_LABELS[mode]}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 
   return (
@@ -1592,6 +1755,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
             onWordClick={handleWordClick}
             wordPanelOpen={wordPanel.isOpen}
             onClose={handleClose}
+            onDismissSelection={dismissSelection}
             trailingAction={sentenceToggle}
             sentenceMode={sentenceMode}
             onSaveText={handleSaveText}
@@ -1603,38 +1767,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
             nextLesson={nextLesson}
             headerAction={
               <>
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    title={`Translations of learning words: ${GLOSS_MODE_LABELS[glossMode]}`}
-                    aria-label={`Translations of learning words: ${GLOSS_MODE_LABELS[glossMode]}`}
-                    data-testid="gloss-toggle"
-                    data-gloss-mode={glossMode}
-                    className={`flex items-center gap-1.5 rounded-lg p-2 transition-colors hover:bg-accent ${
-                      showGlosses ? 'text-foreground' : 'text-muted-foreground/60'
-                    }`}
-                  >
-                    <Captions className="h-5 w-5" />
-                    <span className="hidden text-xs sm:inline">
-                      Translations: {GLOSS_MODE_LABELS[glossMode]}
-                    </span>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuRadioGroup
-                      value={glossMode}
-                      onValueChange={(mode) => chooseGlossMode(mode as GlossMode)}
-                    >
-                      {GLOSS_MODES.map((mode) => (
-                        <DropdownMenuRadioItem
-                          key={mode}
-                          value={mode}
-                          data-testid={`gloss-mode-${mode}`}
-                        >
-                          {GLOSS_MODE_MENU_LABELS[mode]}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {glossMenu}
                 {markRemainingControl}
                 {segments.length > 0 && (
                   <button
@@ -1695,9 +1828,13 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
           onEnrich={canEnrich ? enrichTranslation : undefined}
           onRetranslate={retranslateWithAi}
           onLookupWord={handleNestedLookup}
-          onAddToAnki={!wordPanel.word.includes(' ') ? addWordToAnki : undefined}
+          onAddToAnki={pickedWords.length === 0 ? addWordToAnki : undefined}
           onAddCloze={wordPanel.word.includes(' ') ? addClozeToAnki : undefined}
+          selectionWords={selectionWords}
+          selectionOnly={pickedWords.length > 0}
+          onSetSelectionWords={sameLanguage ? setSelectionWords : undefined}
         />
+        {pickedStyle && <style>{pickedStyle}</style>}
       </TranslationDrawerSlot>
       {onboardingActive && (
         <OnboardingCoach

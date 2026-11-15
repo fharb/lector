@@ -41,15 +41,31 @@ const TEXT_NODE = 3;
  * to `vocab.sentence` and later validated by the Anki cloze builder, so an
  * interleaved read corrupts saved vocabulary and fails the export.
  */
-export function readableText(node: Node): string {
+export function readableText(node: Node, spaceAfterBlocks = false): string {
   if (node.nodeType === TEXT_NODE) return node.textContent ?? '';
-  if (node.nodeType === ELEMENT_NODE && ANNOTATION_TAGS.has((node as Element).tagName)) {
-    return '';
-  }
+  const element = node.nodeType === ELEMENT_NODE ? (node as Element) : null;
+  const tag = element?.tagName ?? '';
+  if (ANNOTATION_TAGS.has(tag) || element?.hasAttribute('data-reader-skip')) return '';
   let out = '';
-  for (const child of Array.from(node.childNodes)) out += readableText(child);
-  return out;
+  for (const child of Array.from(node.childNodes)) out += readableText(child, spaceAfterBlocks);
+  return spaceAfterBlocks && BLOCK_TAGS.has(tag) ? `${out} ` : out;
 }
+
+/** With `spaceAfterBlocks`, the words of two paragraphs do not join. */
+const BLOCK_TAGS = new Set([
+  'P',
+  'LI',
+  'BLOCKQUOTE',
+  'H1',
+  'H2',
+  'H3',
+  'H4',
+  'H5',
+  'H6',
+  'TD',
+  'TH',
+  'PRE',
+]);
 
 /** Where `target` starts inside `root`, counted in `readableText` characters. */
 export function readableOffset(root: Node, target: Node): number {
@@ -79,7 +95,7 @@ export function readableOffset(root: Node, target: Node): number {
  * selection or the rendered DOM.
  */
 export function readableRangeText(range: Range): string {
-  return readableText(range.cloneContents());
+  return readableText(range.cloneContents(), true);
 }
 
 // Expand a selection to full word boundaries. DOM wrapper around the pure

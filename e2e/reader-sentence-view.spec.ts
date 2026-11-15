@@ -72,6 +72,7 @@ test.describe('Sentence view', () => {
 
     await view.getByTestId('sentence-translate').click();
     await expect(drawer).toContainText('sentence translation');
+    await expect(drawer.getByTestId('selection-word')).toHaveCount(4);
 
     // The position survives a reload.
     await page.reload();

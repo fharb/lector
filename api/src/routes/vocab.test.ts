@@ -124,6 +124,38 @@ describe('GET /api/vocab?text= (#240)', () => {
     });
     expect(wrongTarget.status).toBe(400);
   });
+
+  test('each entry carries the collection of its lesson', async () => {
+    db.prepare(
+      `INSERT INTO collections (id, title, author, language, createdAt, lastReadAt, userId)
+       VALUES ('collection-1', 'Boek', 'Unknown', 'af', ?, ?, 'local')`,
+    ).run(TS, TS);
+    db.prepare(
+      `INSERT INTO lessons
+        (id, collectionId, title, textContent, language, createdAt, lastReadAt, userId)
+       VALUES ('lesson-1', 'collection-1', 'Hoofstuk', '', 'af', ?, ?, 'local')`,
+    ).run(TS, TS);
+    seed('from-lesson', 'huis', 'af');
+    seed('from-old-row', 'boom', 'af');
+    seed('orphan', 'kat', 'af');
+    seed('no-source', 'hond', 'af');
+    const setBook = db.prepare('UPDATE vocab SET bookId = ? WHERE id = ?');
+    setBook.run('lesson-1', 'from-lesson');
+    setBook.run('collection-1', 'from-old-row');
+    setBook.run('deleted-lesson', 'orphan');
+
+    const res = await app.request('/?language=af');
+    const byId = new Map(
+      ((await res.json()) as { id: string; collectionId: string | null }[]).map((e) => [
+        e.id,
+        e.collectionId,
+      ]),
+    );
+    expect(byId.get('from-lesson')).toBe('collection-1');
+    expect(byId.get('from-old-row')).toBe('collection-1');
+    expect(byId.get('orphan')).toBeNull();
+    expect(byId.get('no-source')).toBeNull();
+  });
 });
 
 // POST /api/vocab/bulk-delete (#569). The single-row DELETE /:id does two

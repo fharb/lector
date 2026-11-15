@@ -20,6 +20,8 @@ export interface MarkdownReaderProps {
    *  (Esc, the X, clicking away) the reader clears its word/phrase highlight. */
   wordPanelOpen?: boolean;
   onClose: () => void;
+  /** A plain click between words: ends the marking or picks and closes the drawer. */
+  onDismissSelection?: () => void;
   /** A YouTube lesson shows one sentence under its player instead of the whole transcript. */
   sentenceMode?: boolean;
   /** The last header control, after the edit button. */

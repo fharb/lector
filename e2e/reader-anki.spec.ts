@@ -46,15 +46,35 @@ async function mockAnkiConnect(page: Page): Promise<AnkiCall[]> {
     }
     const { action } = body;
     if (action === 'version') {
-      await route.fulfill({ status: 200, headers, body: JSON.stringify({ result: 6, error: null }) });
+      await route.fulfill({
+        status: 200,
+        headers,
+        body: JSON.stringify({ result: 6, error: null }),
+      });
     } else if (action === 'deckNames') {
-      await route.fulfill({ status: 200, headers, body: JSON.stringify({ result: ['Afrikaans', 'Afrikaans::Cloze'], error: null }) });
+      await route.fulfill({
+        status: 200,
+        headers,
+        body: JSON.stringify({ result: ['Afrikaans', 'Afrikaans::Cloze'], error: null }),
+      });
     } else if (action === 'createDeck') {
-      await route.fulfill({ status: 200, headers, body: JSON.stringify({ result: 1, error: null }) });
+      await route.fulfill({
+        status: 200,
+        headers,
+        body: JSON.stringify({ result: 1, error: null }),
+      });
     } else if (action === 'addNote') {
-      await route.fulfill({ status: 200, headers, body: JSON.stringify({ result: 1234567890, error: null }) });
+      await route.fulfill({
+        status: 200,
+        headers,
+        body: JSON.stringify({ result: 1234567890, error: null }),
+      });
     } else {
-      await route.fulfill({ status: 200, headers, body: JSON.stringify({ result: null, error: null }) });
+      await route.fulfill({
+        status: 200,
+        headers,
+        body: JSON.stringify({ result: null, error: null }),
+      });
     }
   };
 
@@ -202,7 +222,7 @@ test.describe('Reader → Anki pipeline', () => {
     expect(addNoteCalls.length).toBe(1);
   });
 
-  test('phrase selection shows "Add to Anki as Cloze" button', async ({ page }) => {
+  test('phrase selection offers a cloze card and a normal card', async ({ page }) => {
     await mockAnkiConnect(page);
     await importAndOpenReader(page);
 
@@ -222,9 +242,9 @@ test.describe('Reader → Anki pipeline', () => {
     const drawer = page.getByTestId('translation-drawer');
     await expect(drawer).toHaveClass(/translate-x-0/, { timeout: 5000 });
 
-    // Phrase drawer: cloze button, NOT the basic "Add to Anki" button
+    // Phrase drawer: a cloze card, or the whole phrase as a normal card
     await expect(drawer.getByTestId('add-cloze-btn')).toBeVisible({ timeout: 8000 });
-    await expect(drawer.getByTestId('add-to-anki-btn')).not.toBeVisible();
+    await expect(drawer.getByTestId('add-to-anki-btn')).toHaveText('Add to Anki as a card');
   });
 
   test('cloze picker shows word chips and preview after selection', async ({ page }) => {
@@ -317,11 +337,23 @@ test.describe('Reader → Anki pipeline', () => {
       const body = JSON.parse(route.request().postData() || '{}') as AnkiCall;
       const headers = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
       if (body.action === 'addNote') {
-        await route.fulfill({ status: 200, headers, body: JSON.stringify({ result: null, error: 'collection is not available' }) });
+        await route.fulfill({
+          status: 200,
+          headers,
+          body: JSON.stringify({ result: null, error: 'collection is not available' }),
+        });
       } else if (body.action === 'createDeck') {
-        await route.fulfill({ status: 200, headers, body: JSON.stringify({ result: 1, error: null }) });
+        await route.fulfill({
+          status: 200,
+          headers,
+          body: JSON.stringify({ result: 1, error: null }),
+        });
       } else {
-        await route.fulfill({ status: 200, headers, body: JSON.stringify({ result: 6, error: null }) });
+        await route.fulfill({
+          status: 200,
+          headers,
+          body: JSON.stringify({ result: 6, error: null }),
+        });
       }
     });
 

@@ -104,7 +104,7 @@ export default function VocabList({
 
     // Apply book filter
     if (bookFilter !== 'all') {
-      result = result.filter((e) => e.bookId === bookFilter);
+      result = result.filter((e) => e.collectionId === bookFilter);
     }
 
     // Apply search filter
@@ -133,8 +133,8 @@ export default function VocabList({
           comparison = stateOrder[a.state] - stateOrder[b.state];
           break;
         case 'bookId':
-          const titleA = a.bookId ? bookTitleMap.get(a.bookId) || '' : '';
-          const titleB = b.bookId ? bookTitleMap.get(b.bookId) || '' : '';
+          const titleA = a.collectionId ? bookTitleMap.get(a.collectionId) || '' : '';
+          const titleB = b.collectionId ? bookTitleMap.get(b.collectionId) || '' : '';
           comparison = collator.compare(titleA, titleB);
           break;
       }
@@ -522,7 +522,7 @@ export default function VocabList({
                 <VocabRow
                   key={entry.id}
                   entry={entry}
-                  bookTitle={entry.bookId ? bookTitleMap.get(entry.bookId) : undefined}
+                  bookTitle={entry.collectionId ? bookTitleMap.get(entry.collectionId) : undefined}
                   isSelected={selectedIds.has(entry.id)}
                   onSelect={handleSelect}
                   onClick={onEntryClick}

@@ -69,7 +69,9 @@ Practice mastery 100 calls `updateWordState` in `persistReview`. That is `POST /
 
 Filter and page run in memory. `GET /api/vocab` has no `limit`. Delete of the last vocab row for a folded key also deletes `knownWords`.
 
-Tests: `e2e/vocab-edit.spec.ts`, `e2e/vocab-pagination.spec.ts`.
+`vocab.bookId` holds the lesson id. `GET /api/vocab` adds `collectionId` from that lesson, and older rows keep a collection id there. The Source column, its sort, and the collection filter use `collectionId`.
+
+Tests: `e2e/vocab-edit.spec.ts`, `e2e/vocab-pagination.spec.ts`, `e2e/vocab-source.spec.ts`.
 
 ## Mark remaining as known
 
@@ -82,13 +84,15 @@ The collector reads paragraphs and list items only, because `ReaderArticle` make
 | Role | Path | Function |
 | --- | --- | --- |
 | UI | `src/components/MarkRemainingKnown/index.tsx` | `MarkRemainingKnown` |
-| Reader | `src/app/read/[bookId]/page.tsx` | `markRemainingKnown` |
+| Reader | `src/app/read/[bookId]/page.tsx` | `markRemainingKnown`, `ignoreRemaining`, `setWordsState` |
 | Collect | `src/components/MarkdownReader/remaining-words.ts` | `tappableMarkdownText`, `uniqueWordKeys`, `remainingWordKeys` |
 | Optimistic map | `src/components/MarkdownReader/optimistic-word-state.ts` | `patchWordStates` |
 | Client | `src/lib/data-layer.ts` | `bulkUpdateWordStates` |
 | API | `api/src/routes/known-words.ts` | `POST /` |
 
 A failed write restores the earlier colours. On success, `dailyStats.wordsMarkedKnown` grows by the word count.
+
+`Ignore remaining words` beside it collects the same words and writes the state `ignored`. It adds nothing to `dailyStats`. Both go through `setWordsState`.
 
 Tests: `e2e/reader-mark-remaining-known.spec.ts`.
 

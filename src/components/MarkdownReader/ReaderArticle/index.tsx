@@ -3,11 +3,14 @@
 import {
   Fragment,
   cloneElement,
+  createContext,
   isValidElement,
   memo,
+  useContext,
   type ReactElement,
   type ReactNode,
 } from 'react';
+import type { Components } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import type { LanguageConfig, WordSegmentation } from '@/lib/languages';
@@ -57,13 +60,22 @@ export interface ReaderBlockProps {
   onClearPhrase: () => void;
 }
 
-export function findSentence(element: HTMLElement, pack: LanguageConfig): string {
+/** The sentence of `element`, running on to the end of the sentence of `last` when both share a block. */
+export function findSentence(
+  element: HTMLElement,
+  pack: LanguageConfig,
+  last: HTMLElement = element,
+): string {
   const block = element.closest('p, li, blockquote, h1, h2, h3, h4, h5, h6');
   if (!block) return '';
   // Not textContent: ruby annotations would be saved into vocab.sentence.
   const text = readableText(block);
   const { start, end } = sentenceSpanAt(text, readableOffset(block, element), pack);
-  return text.slice(start, end).trim();
+  const tailEnd =
+    last !== element && block.contains(last)
+      ? sentenceSpanAt(text, readableOffset(block, last), pack).end
+      : end;
+  return text.slice(start, Math.max(end, tailEnd)).trim();
 }
 
 /** Only re-render a body block when its own words or interaction state changed. */
@@ -231,6 +243,71 @@ const ReaderBlock = memo(function ReaderBlock({
   );
 }, readerBlockPropsEqual);
 
+type BlockProps = Omit<ReaderBlockProps, 'as' | 'children' | 'blockId'>;
+
+/** Reaches the blocks through context, so the components below keep one identity across renders. */
+const BlockPropsContext = createContext<BlockProps | null>(null);
+
+function BodyBlock({
+  as,
+  node,
+  children,
+}: {
+  as: 'p' | 'li';
+  node?: { position?: { start?: { offset?: number } } };
+  children?: ReactNode;
+}) {
+  const props = useContext(BlockPropsContext)!;
+  return (
+    <ReaderBlock as={as} blockId={node?.position?.start?.offset ?? 0} {...props}>
+      {children}
+    </ReaderBlock>
+  );
+}
+
+// Module-level so React keeps the rendered blocks; new component types each render remount them.
+const MARKDOWN_COMPONENTS: Components = {
+  h1: ({ children }) => (
+    <h1 className="mt-8 mb-4 font-sans text-3xl font-extrabold first:mt-0">{children}</h1>
+  ),
+  h2: ({ children }) => (
+    <h2 className="mt-8 mb-3 font-sans text-2xl font-bold first:mt-0">{children}</h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="mt-6 mb-2 font-sans text-xl font-bold first:mt-0">{children}</h3>
+  ),
+  p: ({ node, children }) => (
+    <BodyBlock as="p" node={node}>
+      {children}
+    </BodyBlock>
+  ),
+  ul: ({ children }) => <ul className="my-5 list-disc space-y-2 pl-6">{children}</ul>,
+  ol: ({ children }) => <ol className="my-5 list-decimal space-y-2 pl-6">{children}</ol>,
+  li: ({ node, children }) => (
+    <BodyBlock as="li" node={node}>
+      {children}
+    </BodyBlock>
+  ),
+  blockquote: ({ children }) => (
+    <blockquote className="my-6 border-l-4 border-border pl-4 text-foreground/75 italic">
+      {children}
+    </blockquote>
+  ),
+  strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  a: ({ href, children }) => (
+    <a
+      href={href ?? undefined}
+      target="_blank"
+      rel="noreferrer"
+      className="text-primary underline underline-offset-2"
+    >
+      {children}
+    </a>
+  ),
+  hr: () => <hr className="my-8 border-border" />,
+};
+
 function ReaderArticle({
   content,
   pack,
@@ -285,52 +362,11 @@ function ReaderArticle({
         ...proseStyleVars(prose, pack),
       }}
     >
-      <ReactMarkdown
-        remarkPlugins={[remarkBreaks]}
-        components={{
-          h1: ({ children }) => (
-            <h1 className="mt-8 mb-4 font-sans text-3xl font-extrabold first:mt-0">{children}</h1>
-          ),
-          h2: ({ children }) => (
-            <h2 className="mt-8 mb-3 font-sans text-2xl font-bold first:mt-0">{children}</h2>
-          ),
-          h3: ({ children }) => (
-            <h3 className="mt-6 mb-2 font-sans text-xl font-bold first:mt-0">{children}</h3>
-          ),
-          p: ({ node, children }) => (
-            <ReaderBlock as="p" blockId={node?.position?.start?.offset ?? 0} {...blockProps}>
-              {children}
-            </ReaderBlock>
-          ),
-          ul: ({ children }) => <ul className="my-5 list-disc space-y-2 pl-6">{children}</ul>,
-          ol: ({ children }) => <ol className="my-5 list-decimal space-y-2 pl-6">{children}</ol>,
-          li: ({ node, children }) => (
-            <ReaderBlock as="li" blockId={node?.position?.start?.offset ?? 0} {...blockProps}>
-              {children}
-            </ReaderBlock>
-          ),
-          blockquote: ({ children }) => (
-            <blockquote className="my-6 border-l-4 border-border pl-4 text-foreground/75 italic">
-              {children}
-            </blockquote>
-          ),
-          strong: ({ children }) => <strong className="font-bold">{children}</strong>,
-          em: ({ children }) => <em className="italic">{children}</em>,
-          a: ({ href, children }) => (
-            <a
-              href={href ?? undefined}
-              target="_blank"
-              rel="noreferrer"
-              className="text-primary underline underline-offset-2"
-            >
-              {children}
-            </a>
-          ),
-          hr: () => <hr className="my-8 border-border" />,
-        }}
-      >
-        {content}
-      </ReactMarkdown>
+      <BlockPropsContext.Provider value={blockProps}>
+        <ReactMarkdown remarkPlugins={[remarkBreaks]} components={MARKDOWN_COMPONENTS}>
+          {content}
+        </ReactMarkdown>
+      </BlockPropsContext.Provider>
     </article>
   );
 }

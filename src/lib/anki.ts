@@ -305,7 +305,9 @@ export async function addWordCard(
         // this field to exactly `<b>word</b>`, which is what the round-trip
         // reader matches on.
         Front: `<b>${cleanTarget}</b>`,
-        Back: `${translation}<br><br>${bdi(`<b>${cleanTarget}</b>`)} = ${wordMeaning}${sourceLine}`,
+        Back: wordMeaning
+          ? `${translation}<br><br>${bdi(`<b>${cleanTarget}</b>`)} = ${wordMeaning}${sourceLine}`
+          : `${translation}${sourceLine}`,
       },
       options: { allowDuplicate: true },
       tags: ['lector', 'vocabulary'],

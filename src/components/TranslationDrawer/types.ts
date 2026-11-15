@@ -94,4 +94,15 @@ export interface TranslationDrawerProps {
   onAddToAnki?: () => Promise<void>;
   /** Push a cloze card — called with the word the user chose to blank (phrase selections only). */
   onAddCloze?: (blankWord: string) => Promise<void>;
+  /** The words of a marked phrase or of the Ctrl+click picks, once each, in order. */
+  selectionWords?: SelectionWord[];
+  /** Overwrites the state of each word, whatever it was. */
+  onSetSelectionWords?: (words: string[], state: 'known' | 'ignored') => void;
+  /** Ctrl+click picks: the word list only, no translation. */
+  selectionOnly?: boolean;
+}
+
+export interface SelectionWord {
+  word: string;
+  state: WordState;
 }

@@ -135,7 +135,12 @@ describe('readableText (#289 4.4)', () => {
   // <ruby>, `textContent` gives "我wǒ喜欢xǐhuan" where this returns "我喜欢".
   const text = (value: string): Node => ({ nodeType: 3, textContent: value }) as unknown as Node;
   const el = (tagName: string, ...children: Node[]): Node =>
-    ({ nodeType: 1, tagName, childNodes: children }) as unknown as Node;
+    ({
+      nodeType: 1,
+      tagName,
+      childNodes: children,
+      hasAttribute: () => false,
+    }) as unknown as Node;
   const ruby = (base: string, reading: string) => el('RUBY', text(base), el('RT', text(reading)));
 
   it('skips the reading and keeps the base text', () => {
@@ -171,6 +176,15 @@ describe('readableText (#289 4.4)', () => {
 
   it('returns a bare text node as itself', () => {
     expect(readableText(text('hallo'))).toBe('hallo');
+  });
+
+  it('skips the side translations, and with spaceAfterBlocks keeps two paragraphs apart', () => {
+    const sideGlosses = {
+      ...(el('UL', el('LI', text('hond dog'))) as object),
+      hasAttribute: (name: string) => name === 'data-reader-skip',
+    } as unknown as Node;
+    const range = el('DIV', el('P', text('Die hond')), sideGlosses, el('P', text('blaf.')));
+    expect(readableText(range, true)).toBe('Die hond blaf. ');
   });
 
   it('returns empty for an annotation asked about directly', () => {

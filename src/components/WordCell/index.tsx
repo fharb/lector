@@ -47,7 +47,6 @@ export default function WordCell({
   testId = 'reader-word',
 }: WordCellProps) {
   const colorClass = state ? stateClasses[state] : stateClasses.new;
-  const isHighlighted = isPhraseHighlighted || isActive;
   // A word with no handler is decoration — the settings preview (#570) draws the
   // chips to show a typography change, and there is nothing to look up. Button
   // semantics there would put five dead stops in the keyboard order and read
@@ -61,6 +60,7 @@ export default function WordCell({
       // Marks the span as one word: `usePhraseTouchSelection` selects on this
       // attribute, and the e2e suite asserts the state it carries.
       data-word-state={state ?? 'new'}
+      data-reader-word={interactive ? text : undefined}
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
       aria-label={interactive ? `Look up ${text}` : undefined}
@@ -79,13 +79,15 @@ export default function WordCell({
       // needs that room to avoid the neighbouring word.
       className={`rounded-[7px] ${interactive ? 'cursor-pointer hover:ring-2 hover:ring-ring/50' : ''} ${
         reading && readingOverhangs ? 'relative border-transparent px-[3px]' : 'px-[7px]'
-      } ${colorClass} ${isActive ? 'ring-2 ring-[var(--clay)]' : ''}`}
+      } ${colorClass} ${isActive ? 'ring-2 ring-[var(--clay)]' : ''} ${
+        isPhraseHighlighted ? 'outline-2 outline-offset-1 outline-[var(--ring)]' : ''
+      }`}
       // The weight is a reader setting (#570). The fallback is the 700 this used
       // to hardcode, so a surface outside the reader — listen-along, practice —
       // publishes no custom property and draws exactly as it did before.
       style={{
         fontWeight: 'var(--reader-font-weight, 700)',
-        ...(isHighlighted
+        ...(isActive && !isPhraseHighlighted
           ? { backgroundColor: 'color-mix(in srgb, var(--clay) 22%, transparent)' }
           : {}),
       }}

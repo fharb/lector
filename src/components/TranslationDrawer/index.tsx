@@ -11,9 +11,11 @@ import { wordStateColors, wordStateLabels } from './constants';
 import { ChevronRight, RefreshCw, Sparkles, Volume2, X, Zap } from 'lucide-react';
 import TargetText from '@/components/TargetText';
 import NestedWordButton from './components/NestedWordButton';
+import SelectionWords from './components/SelectionWords';
 import Gloss from './components/Gloss';
 import { StressedWord } from './StressedWord';
 import { lookupAnnouncement } from './lookup-announcement';
+import { MAX_PHRASE_CHARS } from '@/lib/claude';
 import { baseMeanings } from './base-meanings';
 
 export { type ExpandedDictionaryEntry } from './types';
@@ -52,6 +54,9 @@ export default function TranslationDrawer({
   onChooseSaveTarget,
   onAddToAnki,
   onAddCloze,
+  selectionWords,
+  onSetSelectionWords,
+  selectionOnly = false,
 }: TranslationDrawerProps) {
   const pack = useActiveLanguage();
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -104,6 +109,7 @@ export default function TranslationDrawer({
   const currentState = wordState ?? existingEntry?.state ?? 'new';
   const stateColors = wordStateColors[currentState];
   const isPhrase = word.includes(' ');
+  const tooLong = isPhrase && word.length > MAX_PHRASE_CHARS;
   // After a nested lookup (issue #106) the drawer keeps the sentence of the
   // word the user originally clicked — genuine provenance, but not context
   // for the current word unless it actually occurs in it ("sien" is not in
@@ -155,6 +161,40 @@ export default function TranslationDrawer({
             Click a word to look it up.
           </p>
         </div>
+      ) : selectionOnly ? (
+        <>
+          <div className="flex flex-shrink-0 items-start justify-between gap-2 border-b border-border bg-muted/50 px-4 py-3">
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">
+                {selectionWords?.length ?? 0} {selectionWords?.length === 1 ? 'word' : 'words'}{' '}
+                selected
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Ctrl+click (Cmd+click on a Mac) more words to add them. Close to clear.
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className={clsx(
+                'flex-shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+                docked && 'hidden',
+              )}
+              aria-label="Close"
+              title="Close (Esc)"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {selectionWords && (
+              <SelectionWords
+                words={selectionWords}
+                onSetState={onSetSelectionWords}
+                onLookupWord={onLookupWord}
+              />
+            )}
+          </div>
+        </>
       ) : (
         <>
           {/* Header */}
@@ -391,6 +431,10 @@ export default function TranslationDrawer({
                     )}
                   </span>
                 </div>
+              ) : tooLong ? (
+                <p className="text-sm text-muted-foreground italic" data-testid="phrase-too-long">
+                  Too long to translate. Mark a shorter part for a translation.
+                </p>
               ) : (
                 <p className="text-sm text-muted-foreground italic">No definition found.</p>
               )}
@@ -549,6 +593,14 @@ export default function TranslationDrawer({
                 );
               })()}
 
+            {selectionWords && selectionWords.length > 0 && (
+              <SelectionWords
+                words={selectionWords}
+                onSetState={onSetSelectionWords}
+                onLookupWord={onLookupWord}
+              />
+            )}
+
             {/* Sentence — only render if a sentence was provided */}
             {sentence && (
               <section className="border-b border-border px-4 py-3">
@@ -668,7 +720,7 @@ export default function TranslationDrawer({
                   )}
                 </div>
               )}
-              {onRetranslate && (
+              {onRetranslate && !tooLong && (
                 <button
                   onClick={onRetranslate}
                   className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -678,8 +730,7 @@ export default function TranslationDrawer({
                   Re-translate with AI
                 </button>
               )}
-              {/* Anki — single word: pure word card */}
-              {!isPhrase && onAddToAnki && (hasRichEntry || fallbackTranslation) && !isLoading && (
+              {onAddToAnki && (hasRichEntry || fallbackTranslation) && !isLoading && (
                 <button
                   data-testid="add-to-anki-btn"
                   onClick={async () => {
@@ -707,7 +758,9 @@ export default function TranslationDrawer({
                       ? 'Adding…'
                       : ankiStatus === 'error'
                         ? 'Anki error — retry'
-                        : 'Add to Anki'}
+                        : isPhrase
+                          ? 'Add to Anki as a card'
+                          : 'Add to Anki'}
                 </button>
               )}
               {/* Anki — phrase: cloze card with inline word picker */}

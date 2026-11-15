@@ -51,11 +51,26 @@ import YouTubePlayer, { type SeekTarget } from '@/components/YouTubePlayer';
 // The player keeps reporting the old position until a seek lands.
 const SEEK_SETTLE_MS = 1000;
 
+/** The reader words a range touches, in document order. */
+function wordsInRange(range: Range): HTMLElement[] {
+  const common = range.commonAncestorContainer;
+  const root = common instanceof Element ? common : common.parentElement;
+  const own = root?.closest<HTMLElement>('[data-reader-word]');
+  if (own) return [own];
+  return [...(root?.querySelectorAll<HTMLElement>('[data-reader-word]') ?? [])].filter((el) =>
+    range.intersectsNode(el),
+  );
+}
+
+/** A plain click anywhere else in the text ends the selection and closes the drawer. */
+const CLICK_KEEPS_SELECTION = '[data-reader-word], button, a, input, textarea, [role="button"]';
+
 export default function MarkdownReader({
   lesson,
   onWordClick,
   wordPanelOpen = false,
   onClose,
+  onDismissSelection,
   onSaveText,
   onEditingChange,
   knownWordsMap,
@@ -99,6 +114,14 @@ export default function MarkdownReader({
   const [annotationMode, setAnnotationMode] = useState<AnnotationMode>('learning');
   const [readings, setReadings] = useState<Map<string, string> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+  const downOnControlRef = useRef(false);
+  const markFrameRef = useRef(0);
+  const clearMarks = useCallback(() => {
+    for (const el of containerRef.current?.querySelectorAll('[data-marking]') ?? []) {
+      el.removeAttribute('data-marking');
+    }
+  }, []);
   const [highlightedPhrase, setHighlightedPhrase] = useState<string[]>([]);
   // The single word the user last clicked (drawer target). Identified by its
   // block's source offset + word index within the block so we highlight the
@@ -376,10 +399,10 @@ export default function MarkdownReader({
   }, [progressWriter]);
 
   const findSentence = useCallback(
-    (element: HTMLElement): string => {
+    (element: HTMLElement, last?: HTMLElement): string => {
       const cue = element.closest<HTMLElement>('[data-segment-index]');
       const cueText = element.closest('p');
-      if (!transcript || !cue || !cueText) return findBlockSentence(element, pack);
+      if (!transcript || !cue || !cueText) return findBlockSentence(element, pack, last);
       return cueSentence(
         transcript.segments,
         Number(cue.dataset.segmentIndex),
@@ -417,15 +440,16 @@ export default function MarkdownReader({
     if (!wordPanelOpen) {
       setActiveWord(null);
       setHighlightedPhrase([]);
+      clearMarks();
     }
-  }, [wordPanelOpen]);
+  }, [clearMarks, wordPanelOpen]);
 
   // Look up a selected phrase, whichever gesture selected it.
   //
   // A phrase means two or more words. Counted with the tokenizer, not by
   // looking for a space, so the check holds in an unspaced script (#213).
   const lookUpPhrase = useCallback(
-    (text: string, wordElement: HTMLElement | null) => {
+    (text: string, first: HTMLElement, last: HTMLElement) => {
       const words = phraseWords(text);
       if (words.length < 2) return;
 
@@ -435,27 +459,43 @@ export default function MarkdownReader({
       setActiveWord(null);
       setHighlightedPhrase(words);
 
-      onWordClick(text, wordElement ? findSentence(wordElement) : '');
+      // From the marked words, not the mouse-down point, which can lie between words.
+      const head = findSentence(first, last);
+      const tail = findSentence(last);
+      onWordClick(text, head.includes(tail) ? head : `${head} ${tail}`);
     },
     [onWordClick, phraseWords, findSentence],
   );
 
   // Handle text selection for phrases
   const handleMouseUp = useCallback(() => {
+    draggingRef.current = false;
+    cancelAnimationFrame(markFrameRef.current);
     const selection = window.getSelection();
-    if (!selection || selection.isCollapsed) return;
-
-    const rawText = selection.toString().trim();
-    if (!rawText || phraseWords(rawText).length < 2) return;
+    const rawText = selection && !selection.isCollapsed ? selection.toString().trim() : '';
+    if (!selection || !rawText || phraseWords(rawText).length < 2) {
+      clearMarks();
+      if (!downOnControlRef.current && !rawText) onDismissSelection?.();
+      return;
+    }
 
     // Snap to word boundaries
     // Same segmentation the render used, or a phrase drag snaps to boundaries
     // the reader never drew (#289 4.2).
     const snappedText = snapToWordBoundaries(selection, pack, segmentation);
-    if (!snappedText) return;
+    if (!snappedText) {
+      clearMarks();
+      return;
+    }
 
-    lookUpPhrase(snappedText, selection.anchorNode?.parentElement as HTMLElement);
-  }, [lookUpPhrase, phraseWords, pack, segmentation]);
+    const words = wordsInRange(selection.getRangeAt(0));
+    if (words.length === 0) {
+      clearMarks();
+      return;
+    }
+    // The marks stay as the phrase highlight: it can span blocks, which highlightedPhrase cannot.
+    lookUpPhrase(snappedText, words[0], words[words.length - 1]);
+  }, [clearMarks, lookUpPhrase, onDismissSelection, phraseWords, pack, segmentation]);
 
   // The touch gesture reports its endpoint spans, so the phrase text comes from
   // the DOM between them. That keeps the spacing of the rendered text, which a
@@ -465,12 +505,57 @@ export default function MarkdownReader({
       const range = document.createRange();
       range.setStartBefore(first);
       range.setEndAfter(last);
-      lookUpPhrase(readableRangeText(range).trim(), first);
+      lookUpPhrase(readableRangeText(range).trim(), first, last);
     },
     [lookUpPhrase],
   );
 
   usePhraseTouchSelection(containerRef, handleTouchPhrase);
+
+  // A drag that ends outside the text gets no container mouseup; the window listener reads it.
+  const handleMouseUpRef = useRef(handleMouseUp);
+  useEffect(() => {
+    handleMouseUpRef.current = handleMouseUp;
+  }, [handleMouseUp]);
+
+  // While the mouse drags, the words under the selection get the marked border, set on the
+  // DOM: a React update here would re-render every block on each mouse move.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onDown = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      downOnControlRef.current =
+        event.ctrlKey || event.metaKey || Boolean(target?.closest(CLICK_KEEPS_SELECTION));
+      if (event.button !== 0 || event.ctrlKey || event.metaKey) return;
+      clearMarks();
+      draggingRef.current = true;
+    };
+    const onUp = () => {
+      if (draggingRef.current) handleMouseUpRef.current();
+    };
+    const onSelectionChange = () => {
+      if (!draggingRef.current) return;
+      cancelAnimationFrame(markFrameRef.current);
+      markFrameRef.current = requestAnimationFrame(() => {
+        clearMarks();
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+        const range = selection.getRangeAt(0);
+        if (!container.contains(range.commonAncestorContainer)) return;
+        for (const el of wordsInRange(range)) el.setAttribute('data-marking', '');
+      });
+    };
+    container.addEventListener('mousedown', onDown);
+    window.addEventListener('mouseup', onUp);
+    document.addEventListener('selectionchange', onSelectionChange);
+    return () => {
+      cancelAnimationFrame(markFrameRef.current);
+      container.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mouseup', onUp);
+      document.removeEventListener('selectionchange', onSelectionChange);
+    };
+  }, [clearMarks]);
 
   return (
     <div className="flex h-full flex-col bg-card print:block print:h-auto">
@@ -545,7 +630,7 @@ export default function MarkdownReader({
         ref={containerRef}
         onScroll={handleScroll}
         onMouseUp={handleMouseUp}
-        className="flex-1 overflow-auto print:block print:h-auto print:overflow-visible"
+        className="flex-1 overflow-auto print:block print:h-auto print:overflow-visible [&_*::selection]:bg-transparent [&_[data-marking]]:outline-2 [&_[data-marking]]:outline-offset-1 [&_[data-marking]]:outline-[var(--ring)]"
         style={
           placement === 'side' && sideWidth !== null
             ? ({ '--side-gloss-width': `${sideWidth}px` } as CSSProperties)

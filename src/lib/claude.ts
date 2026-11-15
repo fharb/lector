@@ -191,6 +191,9 @@ async function requestEnrichment(word: string, sentence: string): Promise<WordTr
   return response.json();
 }
 
+/** Must match MAX_PHRASE_CHARS in api/src/routes/translate.ts. */
+export const MAX_PHRASE_CHARS = 256;
+
 /**
  * Translate a phrase with surrounding sentence context
  * @param phrase - The phrase to translate

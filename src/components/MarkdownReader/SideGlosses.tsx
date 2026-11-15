@@ -17,6 +17,7 @@ export default function SideGlosses({
   return (
     <ul
       data-testid="side-glosses"
+      data-reader-skip
       className={`space-y-1 border-l-2 border-[var(--clay)]/40 pl-3 font-sans text-[0.8em] leading-snug ${
         beside
           ? 'absolute top-0 bottom-0 left-full ml-6 w-[var(--side-gloss-width)] overflow-y-auto'

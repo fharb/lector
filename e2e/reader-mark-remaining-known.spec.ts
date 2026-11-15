@@ -58,6 +58,36 @@ test.describe('Mark remaining words as known', () => {
     }
   });
 
+  test('ignores only new words, after the learner confirms', async ({ page }) => {
+    const first = word('vreemd');
+    const second = word('ander');
+    const learning = word('leer');
+    const known = word('bekend');
+    const lessonId = await createLesson(page, `${first} ${second} ${learning} ${known}`);
+    await setWordState(page, learning, 'level2');
+    await setWordState(page, known, 'known');
+
+    await page.goto(`/read/${lessonId}`);
+    await expect(lookup(page, first)).toHaveClass(/w-new-bg/, { timeout: 10000 });
+
+    await page.getByTestId('ignore-remaining').click();
+    await expect(page.getByTestId('ignore-remaining-description')).toContainText(
+      '2 new words in this lesson will be ignored',
+    );
+    await page.getByTestId('ignore-remaining-confirm').click();
+
+    await expect(lookup(page, first)).toHaveAttribute('data-word-state', 'ignored');
+    await expect
+      .poll(() => wordStates(page))
+      .toMatchObject({
+        [first]: 'ignored',
+        [second]: 'ignored',
+        [learning]: 'level2',
+        [known]: 'known',
+      });
+    await expect(page.getByTestId('ignore-remaining')).toBeDisabled();
+  });
+
   test('marks only new words, after the learner confirms', async ({ page }) => {
     const first = word('eerste');
     const second = word('tweede');

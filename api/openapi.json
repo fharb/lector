@@ -12059,7 +12059,14 @@
               "string",
               "null"
             ],
-            "description": "Collection the word came from."
+            "description": "Lesson the word came from."
+          },
+          "collectionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Collection of that lesson. Null when the lesson is gone."
           },
           "chapter": {
             "type": [

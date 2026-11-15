@@ -318,7 +318,11 @@ export const schemas: Record<string, JsonSchema> = {
       state: WORD_STATE,
       stateUpdatedAt: ISO_DATE_TIME,
       reviewCount: { type: 'integer' },
-      bookId: { ...NULLABLE_STRING, description: 'Collection the word came from.' },
+      bookId: { ...NULLABLE_STRING, description: 'Lesson the word came from.' },
+      collectionId: {
+        ...NULLABLE_STRING,
+        description: 'Collection of that lesson. Null when the lesson is gone.',
+      },
       chapter: { type: ['integer', 'null'] },
       language: { type: 'string' },
       pushedToAnki: { type: 'integer', enum: [0, 1] },

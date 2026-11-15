@@ -238,7 +238,7 @@
   N("flow:mark-remaining-known", "flow", "Mark remaining as known", {
     domain: "vocabulary",
     md: "vocabulary.md#mark-remaining-as-known",
-    summary: "Reader control. Confirm the count of new words. Writes knownWords only.",
+    summary: "Reader control. Confirm the count of new words. Marks them known or ignored. Writes knownWords only.",
     steps: ["file:mark-remaining-known", "fn:markRemainingKnown", "fn:remainingWordKeys", "fn:patchWordStates", "route:known-words-post", "table:knownWords"],
   });
   N("flow:known-word-import", "flow", "Known-word import", {
